@@ -1,27 +1,99 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* ── BRI Brand Colors ───────────────────────── */
+    --bri-navy:      #002470;
+    --bri-blue:      #003087;
+    --bri-blue-mid:  #001f5b;
+    --bri-red:       #CC0000;
+    --bri-gold:      #f0b429;
+
+    /* ── Semantic ───────────────────────────────── */
+    --color-success: #22c55e;
+    --color-warning: #f0b429;
+    --color-danger:  #CC0000;
+    --color-info:    #003087;
+
+    /* ── Surface ────────────────────────────────── */
+    --bg-primary:    #f0f4f8;
+    --bg-card:       #ffffff;
+    --bg-sidebar:    #001f5b;
+    --bg-navbar:     #002470;
+
+    /* ── Text ───────────────────────────────────── */
+    --text-primary:  #002470;
+    --text-secondary:#718096;
+    --text-muted:    #9ca3af;
+
+    /* ── Border ─────────────────────────────────── */
+    --border-default:#e8ecf4;
+    --border-focus:  #003087;
+
+    /* ── shadcn/ui tokens ───────────────────────── */
+    --background: 0 0% 100%;
+    --foreground: 222 84% 5%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 84% 5%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 84% 5%;
+    --primary: 214 100% 19%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 214 100% 19%;
+    --radius: 0.5rem;
   }
-}
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-}
+  .dark {
+    --background: 222 84% 5%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 38 90% 55%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 38 90% 55%;
+  }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 9999px;
   }
 }

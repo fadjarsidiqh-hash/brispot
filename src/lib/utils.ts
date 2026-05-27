@@ -1,5 +1,5 @@
-import { type ClassValue, clsx } from 'clsx'
-import { twMerge } from 'tailwind-merge'
+import { clsx, type ClassValue } from "clsx"
+import { twMerge } from "tailwind-merge"
 import { format, parseISO } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 
@@ -8,6 +8,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatDate(date: string | Date, fmt = 'dd MMM yyyy'): string {
+  if (!date) return '-'
   const d = typeof date === 'string' ? parseISO(date) : date
   return format(d, fmt, { locale: idLocale })
 }
@@ -27,10 +28,10 @@ export function formatNumber(n: number): string {
 
 export function generateDNNumber(branchCode: string): string {
   const now = new Date()
-  const y = now.getFullYear()
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  const seq = String(Math.floor(Math.random() * 9999)).padStart(4, '0')
-  return `DN/${branchCode}/${y}${m}/${seq}`
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const random = String(Math.floor(Math.random() * 9999)).padStart(4, '0')
+  return `DN/${branchCode}/${year}/${month}/${random}`
 }
 
 export const STATUS_LABELS: Record<string, string> = {
