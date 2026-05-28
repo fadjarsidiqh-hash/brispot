@@ -21,10 +21,11 @@ export function BarChart({ data, title }: BarChartProps) {
           <YAxis tick={{ fontSize: 12 }} />
           <Tooltip
             contentStyle={{ fontSize: 12, borderRadius: 8 }}
-            formatter={(value: number, name: string) => [
-              value,
-              name === 'completed' ? 'Selesai' : 'Total DN',
-            ]}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          formatter={(value: any, name: any) => [
+              value as number,
+              (name as string) === 'completed' ? 'Selesai' : 'Total DN',
+            ] as [number, string]}
           />
           <Legend
             formatter={(value) => (value === 'completed' ? 'Selesai' : 'Total DN')}

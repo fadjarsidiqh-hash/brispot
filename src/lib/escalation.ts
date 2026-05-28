@@ -26,7 +26,8 @@ export async function runEscalationCheck(): Promise<void> {
 
   if (error || !overdueDNs) return
 
-  for (const dn of overdueDNs) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const dn of (overdueDNs as any[])) {
     const dueDate = parseISO(dn.due_date!)
     const daysOverdue = await countWorkingDays(dueDate, now)
     const escalationDate = dn.escalation_date
@@ -37,13 +38,15 @@ export async function runEscalationCheck(): Promise<void> {
 
     if (shouldEscalate) {
       // Update status to ESCALATED
-      await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
         .from('decision_notes')
         .update({ status: 'ESCALATED', escalation_date: escalationDate.toISOString().split('T')[0] })
         .eq('id', dn.id)
 
       // Audit log
-      await supabase.from('audit_logs').insert({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('audit_logs').insert({
         entity_type: 'decision_notes',
         entity_id: dn.id,
         action: 'AUTO_ESCALATED',

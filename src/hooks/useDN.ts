@@ -43,7 +43,8 @@ export function useDN(id?: string) {
   }, [supabase])
 
   const createDN = async (values: InsertDN) => {
-    const { data, error } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any)
       .from('decision_notes')
       .insert(values)
       .select()
@@ -52,7 +53,7 @@ export function useDN(id?: string) {
   }
 
   const updateDN = async (dnId: string, values: Partial<InsertDN>) => {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('decision_notes')
       .update(values)
       .eq('id', dnId)

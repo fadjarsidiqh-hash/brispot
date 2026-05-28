@@ -1,6 +1,6 @@
 'use client'
 
-import { useForm } from 'react-hook-form'
+import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useKPI } from '@/hooks/useKPI'
@@ -28,7 +28,8 @@ export function TargetForm() {
 
   const now = new Date()
   const form = useForm<TargetFormValues>({
-    resolver: zodResolver(schema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(schema) as unknown as Resolver<TargetFormValues>,
     defaultValues: {
       period_year: now.getFullYear(),
       period_month: now.getMonth() + 1,
@@ -50,7 +51,8 @@ export function TargetForm() {
   const errCls = 'text-xs text-red-500 mt-1'
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 max-w-lg">
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-5 max-w-lg">
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="text-sm font-medium text-gray-700">Tahun *</label>

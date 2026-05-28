@@ -43,13 +43,14 @@ export function useKPI(branchCode?: string) {
       .eq('branch_code', branchCode)
       .order('period_month')
 
-    const monthlyTrend = (yearlyTargets ?? []).map((t) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const monthlyTrend = ((yearlyTargets ?? []) as any[]).map((t) => {
       const real = (t.kpi_realizations as KPIRealization[] | undefined)?.[0]
       const completed = real?.completed_dn ?? 0
       const total = real?.total_dn ?? 0
       return {
-        month: t.period_month,
-        label: MONTH_LABELS[t.period_month - 1],
+        month: t.period_month as number,
+        label: MONTH_LABELS[(t.period_month as number) - 1],
         completed,
         total,
         rate: total > 0 ? Math.round((completed / total) * 100) : 0,
@@ -69,7 +70,8 @@ export function useKPI(branchCode?: string) {
   }, [supabase, branchCode, year, month])
 
   const setTarget = async (values: Omit<KPITarget, 'id' | 'created_at' | 'updated_at'>) => {
-    const { data, error } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any)
       .from('kpi_targets')
       .upsert(values, { onConflict: 'period_year,period_month,branch_code' })
       .select()

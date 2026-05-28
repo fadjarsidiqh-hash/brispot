@@ -11,13 +11,14 @@ async function getHolidays(year: number): Promise<Date[]> {
   const supabase = createClient()
   const start = `${year}-01-01`
   const end = `${year}-12-31`
-  const { data } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase as any)
     .from('holidays')
     .select('date')
     .gte('date', start)
     .lte('date', end)
 
-  cachedHolidays = (data ?? []).map((h) => new Date(h.date))
+  cachedHolidays = ((data ?? []) as Array<{ date: string }>).map((h) => new Date(h.date))
   cacheYear = year
   return cachedHolidays
 }

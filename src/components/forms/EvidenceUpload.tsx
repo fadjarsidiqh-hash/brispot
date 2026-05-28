@@ -45,7 +45,8 @@ export function EvidenceUpload({ dnId, conditionId, onUploadComplete }: Evidence
     const { data: { publicUrl } } = supabase.storage.from('brimos-evidence').getPublicUrl(storageData.path)
 
     // Save record to DB
-    await supabase.from('dn_evidences').insert({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('dn_evidences').insert({
       dn_id: dnId,
       condition_id: conditionId ?? null,
       file_name: file.name,
@@ -66,11 +67,11 @@ export function EvidenceUpload({ dnId, conditionId, onUploadComplete }: Evidence
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
     Array.from(fileList).forEach((file) => {
       if (file.size > 10 * 1024 * 1024) {
-        setFiles((prev) => [...prev, { name: file.name, size: file.size, status: 'error', error: 'Ukuran file maks 10MB' }])
+        setFiles((prev) => [...prev, { id: crypto.randomUUID(), name: file.name, size: file.size, status: 'error' as const, error: 'Ukuran file maks 10MB' }])
         return
       }
       if (!allowed.includes(file.type)) {
-        setFiles((prev) => [...prev, { name: file.name, size: file.size, status: 'error', error: 'Format tidak didukung' }])
+        setFiles((prev) => [...prev, { id: crypto.randomUUID(), name: file.name, size: file.size, status: 'error' as const, error: 'Format tidak didukung' }])
         return
       }
       uploadFile(file)

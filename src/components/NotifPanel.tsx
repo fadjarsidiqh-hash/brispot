@@ -38,13 +38,15 @@ export function NotifPanel({ onClose }: NotifPanelProps) {
   }, [onClose])
 
   const markRead = async (id: string) => {
-    await supabase.from('notifications').update({ is_read: true, read_at: new Date().toISOString() }).eq('id', id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('notifications').update({ is_read: true, read_at: new Date().toISOString() }).eq('id', id)
     setItems((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n))
   }
 
   const markAllRead = async () => {
     if (!user) return
-    await supabase.from('notifications').update({ is_read: true }).eq('recipient_id', user.id).eq('is_read', false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('notifications').update({ is_read: true }).eq('recipient_id', user.id).eq('is_read', false)
     setItems((prev) => prev.map((n) => ({ ...n, is_read: true })))
   }
 
