@@ -2,22 +2,22 @@ export type { Database, UserRole, DNStatus, ConditionStatus, PriorityLevel, Noti
 import type { Database } from './database.types'
 
 // Table row types
-export type Profile = Database['public']['Tables']['profiles']['Row']
-export type DecisionNote = Database['public']['Tables']['decision_notes']['Row']
-export type DNCondition = Database['public']['Tables']['dn_conditions']['Row']
-export type DNEvidence = Database['public']['Tables']['dn_evidences']['Row']
-export type FollowupAction = Database['public']['Tables']['followup_actions']['Row']
-export type KPITarget = Database['public']['Tables']['kpi_targets']['Row']
-export type KPIRealization = Database['public']['Tables']['kpi_realizations']['Row']
-export type AuditLog = Database['public']['Tables']['audit_logs']['Row']
-export type Notification = Database['public']['Tables']['notifications']['Row']
-export type Holiday = Database['public']['Tables']['holidays']['Row']
+export type Profile = Database['brimos']['Tables']['profiles']['Row']
+export type DecisionNote = Database['brimos']['Tables']['decision_notes']['Row']
+export type DNCondition = Database['brimos']['Tables']['dn_conditions']['Row']
+export type DNEvidence = Database['brimos']['Tables']['dn_evidences']['Row']
+export type FollowupAction = Database['brimos']['Tables']['followup_actions']['Row']
+export type KPITarget = Database['brimos']['Tables']['kpi_targets']['Row']
+export type KPIRealization = Database['brimos']['Tables']['kpi_realizations']['Row']
+export type AuditLog = Database['brimos']['Tables']['audit_logs']['Row']
+export type Notification = Database['brimos']['Tables']['notifications']['Row']
+export type Holiday = Database['brimos']['Tables']['holidays']['Row']
 
 // Insert types
-export type InsertDN = Database['public']['Tables']['decision_notes']['Insert']
-export type InsertCondition = Database['public']['Tables']['dn_conditions']['Insert']
-export type InsertEvidence = Database['public']['Tables']['dn_evidences']['Insert']
-export type InsertFollowup = Database['public']['Tables']['followup_actions']['Insert']
+export type InsertDN = Database['brimos']['Tables']['decision_notes']['Insert']
+export type InsertCondition = Database['brimos']['Tables']['dn_conditions']['Insert']
+export type InsertEvidence = Database['brimos']['Tables']['dn_evidences']['Insert']
+export type InsertFollowup = Database['brimos']['Tables']['followup_actions']['Insert']
 
 // Extended types (with joins)
 export type DecisionNoteWithRelations = DecisionNote & {

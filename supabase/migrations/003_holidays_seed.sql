@@ -1,9 +1,10 @@
 -- ============================================================
 -- BRIMOS Holiday Seed Data — Indonesian National Holidays
 -- 2025 & 2026
+-- Uses brimos schema
 -- ============================================================
 
-INSERT INTO holidays (date, name, is_national) VALUES
+INSERT INTO brimos.holidays (date, name, is_national) VALUES
 
 -- ── 2025 ──────────────────────────────────────────────────
 ('2025-01-01', 'Tahun Baru Masehi 2025',                 TRUE),

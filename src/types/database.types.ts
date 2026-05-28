@@ -7,7 +7,7 @@ export type PriorityLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 export type NotificationChannel = 'EMAIL' | 'WHATSAPP' | 'IN_APP'
 
 export interface Database {
-  public: {
+  brimos: {
     Tables: {
       profiles: {
         Row: {
@@ -24,8 +24,8 @@ export interface Database {
           created_at: string
           updated_at: string
         }
-        Insert: Omit<Database['public']['Tables']['profiles']['Row'], 'created_at' | 'updated_at'>
-        Update: Partial<Database['public']['Tables']['profiles']['Insert']>
+        Insert: Omit<Database['brimos']['Tables']['profiles']['Row'], 'created_at' | 'updated_at'>
+        Update: Partial<Database['brimos']['Tables']['profiles']['Insert']>
       }
       decision_notes: {
         Row: {
@@ -55,8 +55,8 @@ export interface Database {
           created_at: string
           updated_at: string
         }
-        Insert: Omit<Database['public']['Tables']['decision_notes']['Row'], 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Database['public']['Tables']['decision_notes']['Insert']>
+        Insert: Omit<Database['brimos']['Tables']['decision_notes']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['brimos']['Tables']['decision_notes']['Insert']>
       }
       dn_conditions: {
         Row: {
@@ -73,8 +73,8 @@ export interface Database {
           created_at: string
           updated_at: string
         }
-        Insert: Omit<Database['public']['Tables']['dn_conditions']['Row'], 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Database['public']['Tables']['dn_conditions']['Insert']>
+        Insert: Omit<Database['brimos']['Tables']['dn_conditions']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['brimos']['Tables']['dn_conditions']['Insert']>
       }
       dn_evidences: {
         Row: {
@@ -89,8 +89,8 @@ export interface Database {
           description: string | null
           created_at: string
         }
-        Insert: Omit<Database['public']['Tables']['dn_evidences']['Row'], 'id' | 'created_at'>
-        Update: Partial<Database['public']['Tables']['dn_evidences']['Insert']>
+        Insert: Omit<Database['brimos']['Tables']['dn_evidences']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['brimos']['Tables']['dn_evidences']['Insert']>
       }
       followup_actions: {
         Row: {
@@ -107,8 +107,8 @@ export interface Database {
           created_at: string
           updated_at: string
         }
-        Insert: Omit<Database['public']['Tables']['followup_actions']['Row'], 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Database['public']['Tables']['followup_actions']['Insert']>
+        Insert: Omit<Database['brimos']['Tables']['followup_actions']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['brimos']['Tables']['followup_actions']['Insert']>
       }
       kpi_targets: {
         Row: {
@@ -123,8 +123,8 @@ export interface Database {
           created_at: string
           updated_at: string
         }
-        Insert: Omit<Database['public']['Tables']['kpi_targets']['Row'], 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Database['public']['Tables']['kpi_targets']['Insert']>
+        Insert: Omit<Database['brimos']['Tables']['kpi_targets']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['brimos']['Tables']['kpi_targets']['Insert']>
       }
       kpi_realizations: {
         Row: {
@@ -137,8 +137,8 @@ export interface Database {
           completion_rate: number
           calculated_at: string
         }
-        Insert: Omit<Database['public']['Tables']['kpi_realizations']['Row'], 'id' | 'completion_rate'>
-        Update: Partial<Database['public']['Tables']['kpi_realizations']['Insert']>
+        Insert: Omit<Database['brimos']['Tables']['kpi_realizations']['Row'], 'id' | 'completion_rate'>
+        Update: Partial<Database['brimos']['Tables']['kpi_realizations']['Insert']>
       }
       audit_logs: {
         Row: {
@@ -153,7 +153,7 @@ export interface Database {
           user_agent: string | null
           created_at: string
         }
-        Insert: Omit<Database['public']['Tables']['audit_logs']['Row'], 'id' | 'created_at'>
+        Insert: Omit<Database['brimos']['Tables']['audit_logs']['Row'], 'id' | 'created_at'>
         Update: never
       }
       notifications: {
@@ -169,8 +169,8 @@ export interface Database {
           read_at: string | null
           created_at: string
         }
-        Insert: Omit<Database['public']['Tables']['notifications']['Row'], 'id' | 'created_at'>
-        Update: Partial<Database['public']['Tables']['notifications']['Insert']>
+        Insert: Omit<Database['brimos']['Tables']['notifications']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['brimos']['Tables']['notifications']['Insert']>
       }
       holidays: {
         Row: {
@@ -179,8 +179,8 @@ export interface Database {
           name: string
           is_national: boolean
         }
-        Insert: Omit<Database['public']['Tables']['holidays']['Row'], 'id'>
-        Update: Partial<Database['public']['Tables']['holidays']['Insert']>
+        Insert: Omit<Database['brimos']['Tables']['holidays']['Row'], 'id'>
+        Update: Partial<Database['brimos']['Tables']['holidays']['Insert']>
       }
     }
     Views: Record<string, never>
