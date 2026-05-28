@@ -82,7 +82,7 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-[#f0f4f8] text-[#002470];
   }
 
   ::-webkit-scrollbar {

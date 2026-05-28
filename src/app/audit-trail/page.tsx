@@ -4,13 +4,27 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { AuditLog } from '@/types'
 import { formatDate } from '@/lib/utils'
-import { Search, Download } from 'lucide-react'
+import { Search, Download, ClipboardList, FileText, CheckCircle2, AlertTriangle } from 'lucide-react'
+
+const ACTION_PILL: Record<string, string> = {
+  AUTO_ESCALATED: 'bg-[#fff0f0] text-[#CC0000]',
+  INSERT:         'bg-[#e8f5e9] text-[#16a34a]',
+  UPDATE:         'bg-[#e8f0fe] text-[#003087]',
+  DELETE:         'bg-[#fff0f0] text-[#CC0000]',
+  SUBMIT:         'bg-[#fffbe0] text-[#b8890a]',
+  VERIFY_DK:      'bg-[#e8f0fe] text-[#003087]',
+  VERIFY_BOH:     'bg-[#f3e8ff] text-[#7c3aed]',
+  COMPLETE:       'bg-[#e8f5e9] text-[#16a34a]',
+}
 
 export default function AuditTrailPage() {
   const supabase = createClient()
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [actionFilter, setActionFilter] = useState('')
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 25
 
   useEffect(() => {
     setLoading(true)
@@ -18,19 +32,27 @@ export default function AuditTrailPage() {
       .from('audit_logs')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(500)
       .then(({ data }) => {
         setLogs(data ?? [])
         setLoading(false)
       })
-  }, [supabase])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  const filtered = logs.filter(
-    (l) =>
+  const filtered = logs.filter((l) => {
+    const matchSearch = !search ||
       l.entity_type.toLowerCase().includes(search.toLowerCase()) ||
       l.action.toLowerCase().includes(search.toLowerCase()) ||
       l.entity_id.includes(search)
-  )
+    const matchAction = actionFilter ? l.action === actionFilter : true
+    return matchSearch && matchAction
+  })
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  const uniqueActions = Array.from(new Set(logs.map((l) => l.action)))
 
   const exportCSV = () => {
     const headers = ['Waktu', 'Entitas', 'ID', 'Aksi', 'Pelaku']
@@ -43,71 +65,120 @@ export default function AuditTrailPage() {
     ])
     const csv = [headers, ...rows].map((r) => r.join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
     a.href = url
     a.download = `audit-trail-${Date.now()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
 
-  const ACTION_COLORS: Record<string, string> = {
-    AUTO_ESCALATED: 'bg-red-100 text-red-700',
-    INSERT: 'bg-green-100 text-green-700',
-    UPDATE: 'bg-blue-100 text-blue-700',
-    DELETE: 'bg-red-100 text-red-700',
-  }
+  // Summary counts
+  const totalLogs  = logs.length
+  const insertLogs = logs.filter((l) => l.action === 'INSERT').length
+  const closedLogs = logs.filter((l) => l.action === 'COMPLETE').length
+  const escalated  = logs.filter((l) => l.action === 'AUTO_ESCALATED').length
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3.5">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Audit Trail</h1>
-          <p className="text-sm text-gray-500">Log aktivitas sistem BRIMOS</p>
+          <h1 className="text-[13px] font-bold text-[#002470]">Audit Trail</h1>
+          <p className="text-[9px] text-[#9ca3af]">Log aktivitas sistem BRIMOS</p>
         </div>
-        <button onClick={exportCSV}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-[#002D62] bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors">
-          <Download className="w-4 h-4" /> Export CSV
+        <button
+          onClick={exportCSV}
+          className="flex items-center gap-1.5 px-4 py-2 text-[10px] font-bold text-[#003087] bg-[#e8f0fe] rounded-lg hover:bg-[#d1e3fc] transition-colors"
+        >
+          <Download className="w-3.5 h-3.5" /> Ekspor CSV
         </button>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Cari entitas, aksi, ID..."
-          className="w-full pl-9 pr-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#002D62]/30"
-        />
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+        {[
+          { icon: ClipboardList, label: 'Total Log',    value: totalLogs,  color: 'border-t-[#003087] text-[#003087]' },
+          { icon: FileText,      label: 'DN Dibuat',    value: insertLogs, color: 'border-t-[#22c55e] text-[#22c55e]' },
+          { icon: CheckCircle2,  label: 'DN Closed',    value: closedLogs, color: 'border-t-[#f0b429] text-[#c8870a]' },
+          { icon: AlertTriangle, label: 'Eskalasi',     value: escalated,  color: 'border-t-[#CC0000] text-[#CC0000]' },
+        ].map(({ icon: Icon, label, value, color }) => (
+          <div key={label} className={`bg-white rounded-[10px] p-3 border border-[#e8ecf4] border-t-4 ${color.split(' ')[0]} shadow-[0_1px_3px_rgba(0,36,112,0.07)]`}>
+            <div className="flex items-center gap-1.5 mb-1">
+              <Icon className={`w-3.5 h-3.5 ${color.split(' ')[1]}`} />
+              <div className="text-[9px] text-[#9ca3af] font-medium">{label}</div>
+            </div>
+            <div className={`text-2xl font-extrabold leading-none ${color.split(' ')[1]}`}>{value}</div>
+          </div>
+        ))}
       </div>
 
-      <div className="bg-white rounded-2xl border overflow-hidden">
+      {/* Filter bar */}
+      <div className="bg-white rounded-[10px] border border-[#e8ecf4] shadow-[0_1px_3px_rgba(0,36,112,0.07)] p-3">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[#9ca3af]" />
+            <input
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+              placeholder="Cari entitas, aksi, ID..."
+              className="w-full pl-8 pr-3 py-2 rounded-lg border border-[#e8ecf4] text-[11px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#003087] focus:ring-2 focus:ring-[#003087]/10 transition-colors"
+            />
+          </div>
+          <select
+            value={actionFilter}
+            onChange={(e) => { setActionFilter(e.target.value); setPage(1) }}
+            className="py-2 px-2.5 rounded-lg border border-[#e8ecf4] text-[11px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#003087] transition-colors"
+          >
+            <option value="">Semua Aksi</option>
+            {uniqueActions.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </div>
+        {filtered.length > 0 && (
+          <p className="text-[9px] text-[#9ca3af] mt-1.5">{filtered.length} log ditemukan</p>
+        )}
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-[10px] border border-[#e8ecf4] shadow-[0_1px_3px_rgba(0,36,112,0.07)] overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center h-40 text-sm text-gray-400">Memuat log...</div>
+          <div className="flex items-center justify-center h-40 text-[11px] text-[#9ca3af]">Memuat log...</div>
+        ) : paginated.length === 0 ? (
+          <div className="flex items-center justify-center h-40 text-[11px] text-[#9ca3af]">Tidak ada log ditemukan</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full">
               <thead>
-                <tr className="bg-gray-50 border-b text-left">
-                  <th className="px-4 py-3 font-semibold text-gray-600">Waktu</th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">Entitas</th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">ID</th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">Aksi</th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">Pelaku</th>
+                <tr className="bg-[#003087] text-left">
+                  {['Waktu', 'Entitas', 'ID Objek', 'Aksi', 'Pelaku', 'Status Sebelum', 'Status Sesudah'].map((h) => (
+                    <th key={h} className="px-3 py-2.5 text-[9px] font-bold text-white tracking-wide whitespace-nowrap">{h}</th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y">
-                {filtered.map((log) => (
-                  <tr key={log.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-xs text-gray-500">{formatDate(log.created_at, 'dd/MM/yy HH:mm')}</td>
-                    <td className="px-4 py-3 text-xs text-gray-700 font-mono">{log.entity_type}</td>
-                    <td className="px-4 py-3 text-xs text-gray-400 font-mono truncate max-w-[120px]" title={log.entity_id}>{log.entity_id.slice(0, 8)}...</td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ACTION_COLORS[log.action] ?? 'bg-gray-100 text-gray-600'}`}>
+              <tbody className="divide-y divide-[#e8ecf4]">
+                {paginated.map((log) => (
+                  <tr key={log.id} className="hover:bg-[#f8fafc] transition-colors">
+                    <td className="px-3 py-2 text-[9px] text-[#9ca3af] whitespace-nowrap">
+                      {formatDate(log.created_at, 'dd/MM/yy HH:mm')}
+                    </td>
+                    <td className="px-3 py-2 text-[9px] text-[#4a5568] font-mono">{log.entity_type}</td>
+                    <td className="px-3 py-2 text-[9px] text-[#9ca3af] font-mono" title={log.entity_id}>
+                      {log.entity_id.slice(0, 8)}…
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`text-[8px] px-2 py-0.5 rounded-full font-semibold ${ACTION_PILL[log.action] ?? 'bg-[#f0f2f7] text-[#718096]'}`}>
                         {log.action}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-500 font-mono">{log.performed_by?.slice(0, 8) ?? '—'}</td>
+                    <td className="px-3 py-2 text-[9px] text-[#9ca3af] font-mono">
+                      {log.performed_by?.slice(0, 8) ?? '—'}
+                    </td>
+                    <td className="px-3 py-2 text-[9px] text-[#9ca3af]">
+                      {(log.old_values as Record<string, string> | null)?.status ?? '—'}
+                    </td>
+                    <td className="px-3 py-2 text-[9px] text-[#9ca3af]">
+                      {(log.new_values as Record<string, string> | null)?.status ?? '—'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -115,6 +186,28 @@ export default function AuditTrailPage() {
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-1.5">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="px-3 py-1.5 text-[10px] font-medium text-[#003087] bg-white border border-[#e8ecf4] rounded-lg disabled:opacity-40 hover:bg-[#f0f4f8] transition-colors"
+          >
+            ← Prev
+          </button>
+          <span className="text-[9px] text-[#9ca3af] px-2">Halaman {page} / {totalPages}</span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+            className="px-3 py-1.5 text-[10px] font-medium text-[#003087] bg-white border border-[#e8ecf4] rounded-lg disabled:opacity-40 hover:bg-[#f0f4f8] transition-colors"
+          >
+            Next →
+          </button>
+        </div>
+      )}
     </div>
   )
 }
+

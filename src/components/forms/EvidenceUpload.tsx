@@ -86,14 +86,14 @@ export function EvidenceUpload({ dnId, conditionId, onUploadComplete }: Evidence
         onDragLeave={() => setIsDragging(false)}
         onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleFiles(e.dataTransfer.files) }}
         className={cn(
-          'border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer',
-          isDragging ? 'border-[#002D62] bg-blue-50' : 'border-gray-300 hover:border-gray-400'
+          'border-2 border-dashed rounded-[10px] p-5 text-center transition-all cursor-pointer',
+          isDragging ? 'border-[#003087] bg-[#f0f6ff]' : 'border-[#c8dff5] bg-[#f8fafc] hover:border-[#003087] hover:bg-[#f0f6ff]'
         )}
         onClick={() => document.getElementById('file-input-brimos')?.click()}
       >
-        <UploadCloud className="w-8 h-8 mx-auto text-gray-400 mb-2" />
-        <p className="text-sm font-medium text-gray-700">Drag & drop atau klik untuk upload</p>
-        <p className="text-xs text-gray-400 mt-1">PDF, Word, Excel, JPG, PNG — maks 10MB</p>
+        <UploadCloud className="w-7 h-7 mx-auto text-[#003087] mb-2" />
+        <p className="text-[10px] font-semibold text-[#003087]">Drag &amp; drop atau klik untuk upload</p>
+        <p className="text-[8px] text-[#9ca3af] mt-0.5">PDF, Word, Excel, JPG, PNG — maks 10MB</p>
         <input
           id="file-input-brimos"
           type="file"
@@ -108,12 +108,14 @@ export function EvidenceUpload({ dnId, conditionId, onUploadComplete }: Evidence
       {files.length > 0 && (
         <div className="space-y-2">
           {files.map((f) => (
-            <div key={f.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border">
-              <FileText className="w-5 h-5 text-gray-400 shrink-0" />
+            <div key={f.id} className={`flex items-center gap-2.5 p-2.5 rounded-lg border ${
+              f.status === 'error' ? 'bg-[#fff0f0] border-[#ffcdd2]' : 'bg-[#f0f7ff] border-[#c8dff5]'
+            }`}>
+              <FileText className="w-4 h-4 text-[#003087] shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{f.name}</p>
-                <p className="text-xs text-gray-400">{(f.size / 1024).toFixed(1)} KB</p>
-                {f.error && <p className="text-xs text-red-500">{f.error}</p>}
+                <p className="text-[10px] font-medium text-[#002470] truncate">{f.name}</p>
+                <p className="text-[8px] text-[#9ca3af]">{(f.size / 1024).toFixed(1)} KB</p>
+                {f.error && <p className="text-[8px] text-red-500">{f.error}</p>}
               </div>
               {f.status === 'uploading' && <Loader2 className="w-4 h-4 animate-spin text-blue-500" />}
               {f.status === 'done' && <CheckCircle2 className="w-4 h-4 text-green-500" />}

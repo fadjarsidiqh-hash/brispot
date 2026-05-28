@@ -18,7 +18,7 @@ export function ProgressRing({
   strokeWidth = 10,
   label,
   sublabel,
-  color = '#002D62',
+  color = '#003087',
   className,
 }: ProgressRingProps) {
   const radius = (size - strokeWidth) / 2
@@ -50,9 +50,9 @@ export function ProgressRing({
         />
       </svg>
       <div className="absolute text-center">
-        <p className="text-2xl font-bold text-gray-800 leading-none">{Math.round(value)}%</p>
-        {label && <p className="text-xs text-gray-500 mt-1">{label}</p>}
-        {sublabel && <p className="text-xs text-gray-400">{sublabel}</p>}
+        <p className="text-xl font-extrabold text-[#002470] leading-none">{Math.round(value)}%</p>
+        {label && <p className="text-[9px] text-[#9ca3af] mt-0.5">{label}</p>}
+        {sublabel && <p className="text-[8px] text-[#9ca3af]">{sublabel}</p>}
       </div>
     </div>
   )

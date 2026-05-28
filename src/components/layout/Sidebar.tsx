@@ -5,84 +5,179 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import {
-  LayoutDashboard, FileText, CheckSquare, BarChart2,
-  ClipboardList, Activity, ChevronLeft, ChevronRight, LogOut, ShieldCheck
+  LayoutDashboard, FileText, Activity, Target, Upload,
+  ClipboardList, Settings, LogOut, CheckSquare, ShieldCheck,
 } from 'lucide-react'
-import { useState } from 'react'
 
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['AO','DK','BOH','ADMIN'] },
-  { href: '/decision-notes', label: 'Decision Notes', icon: FileText, roles: ['AO','DK','BOH','ADMIN'] },
-  { href: '/verifikasi', label: 'Verifikasi', icon: CheckSquare, roles: ['DK','BOH','ADMIN'] },
-  { href: '/monitoring', label: 'Monitoring', icon: Activity, roles: ['DK','BOH','ADMIN'] },
-  { href: '/kpi', label: 'KPI & Target', icon: BarChart2, roles: ['BOH','ADMIN'] },
-  { href: '/audit-trail', label: 'Audit Trail', icon: ClipboardList, roles: ['ADMIN'] },
+type NavItem = { href: string; label: string; icon: React.ElementType }
+type NavCategory = { label: string; items: NavItem[] }
+
+const AO_NAV: NavCategory[] = [
+  {
+    label: 'Utama',
+    items: [
+      { href: '/dashboard',       label: 'Dashboard',       icon: LayoutDashboard },
+      { href: '/decision-notes',  label: 'Decision Notes',  icon: FileText },
+      { href: '/monitoring',      label: 'Monitoring',      icon: Activity },
+      { href: '/kpi',             label: 'KPI Saya',        icon: Target },
+    ],
+  },
+  {
+    label: 'Laporan',
+    items: [
+      { href: '/audit-trail', label: 'Audit Trail', icon: ClipboardList },
+    ],
+  },
+  {
+    label: 'Akun',
+    items: [
+      { href: '/settings', label: 'Pengaturan', icon: Settings },
+    ],
+  },
 ]
+
+const DK_NAV: NavCategory[] = [
+  {
+    label: 'Verifikasi',
+    items: [
+      { href: '/verifikasi',  label: 'Antrian Verifikasi', icon: CheckSquare },
+      { href: '/monitoring',  label: 'Monitoring',         icon: Activity },
+    ],
+  },
+  {
+    label: 'Laporan',
+    items: [
+      { href: '/audit-trail', label: 'Audit Trail', icon: ClipboardList },
+    ],
+  },
+  {
+    label: 'Akun',
+    items: [
+      { href: '/settings', label: 'Pengaturan', icon: Settings },
+    ],
+  },
+]
+
+const BOH_NAV: NavCategory[] = [
+  {
+    label: 'Utama',
+    items: [
+      { href: '/dashboard',      label: 'Dashboard',      icon: LayoutDashboard },
+      { href: '/decision-notes', label: 'Decision Notes', icon: FileText },
+      { href: '/monitoring',     label: 'Monitoring',     icon: Activity },
+      { href: '/kpi',            label: 'KPI & Setting',  icon: Target },
+    ],
+  },
+  {
+    label: 'Tim',
+    items: [
+      { href: '/verifikasi', label: 'Verifikasi', icon: CheckSquare },
+    ],
+  },
+  {
+    label: 'Laporan',
+    items: [
+      { href: '/audit-trail', label: 'Audit Trail', icon: ClipboardList },
+    ],
+  },
+]
+
+const ADMIN_NAV: NavCategory[] = [
+  {
+    label: 'Utama',
+    items: [
+      { href: '/dashboard',      label: 'Dashboard',      icon: LayoutDashboard },
+      { href: '/decision-notes', label: 'Decision Notes', icon: FileText },
+      { href: '/monitoring',     label: 'Monitoring',     icon: Activity },
+      { href: '/kpi',            label: 'KPI & Setting',  icon: Target },
+      { href: '/verifikasi',     label: 'Verifikasi',     icon: CheckSquare },
+    ],
+  },
+  {
+    label: 'Laporan',
+    items: [
+      { href: '/audit-trail', label: 'Audit Trail', icon: ClipboardList },
+    ],
+  },
+  {
+    label: 'Akun',
+    items: [
+      { href: '/settings', label: 'Pengaturan', icon: Settings },
+    ],
+  },
+]
+
+const NAV_BY_ROLE: Record<string, NavCategory[]> = {
+  AO: AO_NAV, DK: DK_NAV, BOH: BOH_NAV, ADMIN: ADMIN_NAV,
+}
 
 export function Sidebar() {
   const pathname = usePathname()
   const { profile, signOut } = useAuth()
-  const [collapsed, setCollapsed] = useState(false)
-
   const role = profile?.role ?? 'AO'
-  const visible = navItems.filter((n) => n.roles.includes(role))
+  const categories = NAV_BY_ROLE[role] ?? AO_NAV
 
   return (
-    <aside
-      className={cn(
-        'flex flex-col bg-[#002D62] text-white transition-all duration-300 min-h-screen',
-        collapsed ? 'w-16' : 'w-60'
+    <aside className="w-[195px] shrink-0 bg-[#001f5b] flex flex-col overflow-y-auto">
+      {categories.map((cat) => (
+        <div key={cat.label}>
+          <div className="px-3.5 pt-3.5 pb-1 text-[8px] font-bold tracking-[1.8px] uppercase text-white/30">
+            {cat.label}
+          </div>
+          {cat.items.map((item) => {
+            const Icon = item.icon
+            const active = pathname === item.href || pathname.startsWith(item.href + '/')
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'flex items-center gap-2.5 px-3.5 py-[9px] text-[11px] font-medium transition-all border-r-[3px]',
+                  active
+                    ? 'text-[#f0b429] bg-[rgba(240,180,41,0.12)] border-r-[#f0b429] font-semibold'
+                    : 'text-white/58 border-transparent hover:bg-white/[0.06] hover:text-white/85'
+                )}
+              >
+                <Icon className="w-[15px] h-[15px] shrink-0" />
+                <span>{item.label}</span>
+              </Link>
+            )
+          })}
+        </div>
+      ))}
+
+      <div className="flex-1" />
+
+      {/* Bottom KPI widget for AO/BOH/ADMIN */}
+      {(role === 'AO' || role === 'BOH' || role === 'ADMIN') && (
+        <div className="mx-3.5 mb-3 mt-2 bg-[rgba(240,180,41,0.10)] border border-[rgba(240,180,41,0.20)] rounded-[10px] p-3">
+          <div className="text-[9px] text-[#f0b429] font-semibold">KPI Bulan Ini</div>
+          <div className="text-xl font-extrabold text-white my-0.5">—%</div>
+          <div className="bg-white/10 rounded h-1 mt-1">
+            <div className="bg-[#f0b429] h-1 rounded w-0" />
+          </div>
+          <div className="text-[8px] text-white/35 mt-1">Set target untuk lihat progress</div>
+        </div>
       )}
-    >
-      {/* Logo */}
-      <div className="flex items-center gap-2 px-4 py-5 border-b border-white/10">
-        <ShieldCheck className="shrink-0 w-7 h-7 text-[#F5A623]" />
-        {!collapsed && (
-          <span className="font-bold text-lg tracking-tight">BRIMOS</span>
-        )}
-      </div>
 
-      {/* Nav */}
-      <nav className="flex-1 py-4 space-y-1 px-2">
-        {visible.map((item) => {
-          const Icon = item.icon
-          const active = pathname === item.href || pathname.startsWith(item.href + '/')
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                active
-                  ? 'bg-white/15 text-white'
-                  : 'text-white/70 hover:bg-white/10 hover:text-white'
-              )}
-            >
-              <Icon className="w-5 h-5 shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
-            </Link>
-          )
-        })}
-      </nav>
+      {/* Bottom antrian widget for DK */}
+      {role === 'DK' && (
+        <div className="mx-3.5 mb-3 mt-2 bg-[rgba(204,0,0,0.10)] border border-[rgba(204,0,0,0.20)] rounded-[10px] p-3 text-center">
+          <div className="text-[9px] text-white/50">Antrian</div>
+          <div className="text-2xl font-extrabold text-[#CC0000] leading-none my-1">—</div>
+          <div className="text-[8px] text-white/35">item menunggu</div>
+        </div>
+      )}
 
-      {/* Footer */}
-      <div className="p-2 border-t border-white/10 space-y-1">
-        <button
-          onClick={() => setCollapsed((c) => !c)}
-          className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-white/70 hover:bg-white/10 hover:text-white text-sm transition-colors"
-        >
-          {collapsed ? <ChevronRight className="w-5 h-5" /> : (
-            <><ChevronLeft className="w-5 h-5" /><span>Collapse</span></>
-          )}
-        </button>
-        <button
-          onClick={() => signOut()}
-          className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-white/70 hover:bg-red-500/20 hover:text-red-300 text-sm transition-colors"
-        >
-          <LogOut className="w-5 h-5 shrink-0" />
-          {!collapsed && <span>Keluar</span>}
-        </button>
-      </div>
+      {/* Sign out */}
+      <button
+        onClick={() => signOut()}
+        className="flex items-center gap-2.5 px-3.5 py-2.5 text-[11px] font-medium text-white/50 hover:text-red-300 hover:bg-red-500/10 transition-colors border-t border-white/[0.06]"
+      >
+        <LogOut className="w-[15px] h-[15px] shrink-0" />
+        <span>Keluar</span>
+      </button>
     </aside>
   )
 }
+

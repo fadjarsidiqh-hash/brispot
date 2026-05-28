@@ -135,29 +135,43 @@ export function DNForm() {
     router.push(`/decision-notes/${dn.id}`)
   }
 
-  const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#002D62]/30 focus:border-[#002D62]'
-  const errCls = 'text-xs text-red-500 mt-1'
+  const inputCls = 'w-full rounded-md border border-[#e8ecf4] px-3 py-2 text-[11px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#003087] focus:ring-2 focus:ring-[#003087]/10 transition-colors'
+  const errCls   = 'text-[9px] text-red-500 mt-1'
 
   return (
     <div className="max-w-2xl mx-auto">
-      {/* Step indicator */}
-      <div className="flex items-center gap-2 mb-8">
-        {STEPS.map((label, i) => (
-          <div key={i} className="flex items-center gap-1 flex-1">
-            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${i < step ? 'bg-green-500 text-white' : i === step ? 'bg-[#002D62] text-white' : 'bg-gray-200 text-gray-500'}`}>
-              {i + 1}
+      {/* Step wizard */}
+      <div className="flex items-start mb-6">
+        {STEPS.map((label, i) => {
+          const isDone    = i < step
+          const isCurrent = i === step
+          return (
+            <div key={i} className="flex items-start flex-1 min-w-0">
+              <div className="flex flex-col items-center shrink-0">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold border-2 ${
+                  isDone    ? 'bg-[#003087] border-[#003087] text-white'
+                  : isCurrent ? 'bg-[#f0b429] border-[#f0b429] text-[#002470]'
+                  : 'bg-white border-[#d1d5db] text-[#9ca3af]'
+                }`}>
+                  {isDone ? '✓' : i + 1}
+                </div>
+                <span className={`text-[9px] mt-1 text-center hidden sm:block ${
+                  isCurrent ? 'text-[#003087] font-semibold' : 'text-[#9ca3af]'
+                }`}>{label}</span>
+              </div>
+              {i < STEPS.length - 1 && (
+                <div className={`h-[2px] flex-1 mt-[13px] mx-0.5 ${isDone ? 'bg-[#003087]' : 'bg-[#e8ecf4]'}`} />
+              )}
             </div>
-            <span className={`text-xs hidden sm:block ${i === step ? 'text-[#002D62] font-semibold' : 'text-gray-400'}`}>{label}</span>
-            {i < STEPS.length - 1 && <div className="flex-1 h-0.5 bg-gray-200 mx-1" />}
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         {/* Step 0 */}
         {step === 0 && (
-          <div className="space-y-4">
-            <h2 className="font-semibold text-gray-800">Data Debitur</h2>
+          <div className="space-y-3.5">
+            <div className="bg-[#003087] text-white rounded px-3 py-2 text-[10px] font-bold">Data Debitur</div>
             <div>
               <label className="text-sm font-medium text-gray-700">Nama Debitur *</label>
               <input {...form.register('debtor_name')} className={inputCls} placeholder="Nama lengkap debitur" />
@@ -192,8 +206,8 @@ export function DNForm() {
 
         {/* Step 1 */}
         {step === 1 && (
-          <div className="space-y-4">
-            <h2 className="font-semibold text-gray-800">Info Persetujuan</h2>
+          <div className="space-y-3.5">
+            <div className="bg-[#003087] text-white rounded px-3 py-2 text-[10px] font-bold">Info Persetujuan</div>
             <div>
               <label className="text-sm font-medium text-gray-700">Nomor DN *</label>
               <input {...form.register('dn_number')} className={inputCls} placeholder="DN/KODE/YYYYMM/0001" />
@@ -218,16 +232,16 @@ export function DNForm() {
 
         {/* Step 2 – Conditions */}
         {step === 2 && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-gray-800">Kondisi Pasca Persetujuan</h2>
+          <div className="space-y-3.5">
+            <div className="flex items-center gap-2">
+              <div className="bg-[#003087] text-white rounded px-3 py-2 text-[10px] font-bold flex-1">Kondisi Pasca Persetujuan</div>
               <button type="button" onClick={() => appendCond({ condition_text: '', condition_type: 'STANDARD', due_date: '', assigned_to: '' })}
-                className="flex items-center gap-1 text-sm text-[#002D62] hover:underline">
-                <Plus className="w-4 h-4" /> Tambah
+                className="flex items-center gap-1 text-[10px] text-[#003087] font-semibold hover:underline whitespace-nowrap">
+                <Plus className="w-3 h-3" /> Tambah
               </button>
             </div>
             {condFields.map((field, i) => (
-              <div key={field.id} className="border rounded-xl p-4 space-y-3 bg-gray-50">
+              <div key={field.id} className="border border-[#e8ecf4] rounded-lg p-3 space-y-2.5 bg-[#fafbfc]">
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-semibold text-gray-500">Kondisi {i + 1}</span>
                   {i > 0 && (
@@ -261,9 +275,9 @@ export function DNForm() {
 
         {/* Step 3 – Follow-up */}
         {step === 3 && (
-          <div className="space-y-4">
+          <div className="space-y-3.5">
             <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-gray-800">Tindak Lanjut</h2>
+              <div className="bg-[#003087] text-white rounded px-3 py-2 text-[10px] font-bold flex-1">Tindak Lanjut</div>
               <button type="button" onClick={() => appendFU({ action_text: '', due_date: '', assigned_to: '' })}
                 className="flex items-center gap-1 text-sm text-[#002D62] hover:underline">
                 <Plus className="w-4 h-4" /> Tambah
@@ -292,9 +306,9 @@ export function DNForm() {
 
         {/* Step 4 – Review */}
         {step === 4 && (
-          <div className="space-y-4">
-            <h2 className="font-semibold text-gray-800">Review & Submit</h2>
-            <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
+          <div className="space-y-3.5">
+            <div className="bg-[#003087] text-white rounded px-3 py-2 text-[10px] font-bold">Review &amp; Submit</div>
+            <div className="bg-[#fafbfc] rounded-lg border border-[#e8ecf4] p-4 space-y-2 text-[11px]">
               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                 <span className="text-gray-500">Debitur</span><span className="font-medium">{form.watch('debtor_name')}</span>
                 <span className="text-gray-500">CIF</span><span className="font-medium">{form.watch('debtor_cif')}</span>
@@ -324,18 +338,18 @@ export function DNForm() {
         <div className="flex items-center justify-between pt-4">
           <button type="button" onClick={() => setStep((s) => Math.max(s - 1, 0))}
             disabled={step === 0}
-            className="flex items-center gap-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40">
-            <ChevronLeft className="w-4 h-4" /> Sebelumnya
+            className="flex items-center gap-1 px-4 py-2 text-[11px] font-medium text-[#002470] bg-white border border-[#e8ecf4] rounded-lg hover:bg-[#f0f4f8] disabled:opacity-40">
+            <ChevronLeft className="w-3.5 h-3.5" /> Sebelumnya
           </button>
           {step < STEPS.length - 1 ? (
             <button type="button" onClick={goNext}
-              className="flex items-center gap-1 px-5 py-2 text-sm font-semibold text-white bg-[#002D62] rounded-lg hover:bg-[#003f8a] transition-colors">
-              Berikutnya <ChevronRight className="w-4 h-4" />
+              className="flex items-center gap-1 px-5 py-2 text-[11px] font-semibold text-white bg-[#003087] rounded-lg hover:bg-[#002470] transition-colors">
+              Berikutnya <ChevronRight className="w-3.5 h-3.5" />
             </button>
           ) : (
             <button type="submit" disabled={submitting}
-              className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-[#002D62] rounded-lg hover:bg-[#003f8a] disabled:opacity-60 transition-colors">
-              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              className="flex items-center gap-2 px-5 py-2 text-[11px] font-semibold text-white bg-[#003087] rounded-lg hover:bg-[#002470] disabled:opacity-60 transition-colors">
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Simpan DN
             </button>
           )}
