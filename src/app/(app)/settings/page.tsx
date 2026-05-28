@@ -3,7 +3,7 @@
 import { useAuth } from '@/hooks/useAuth'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { User, Lock, Bell, Shield } from 'lucide-react'
+import { User, Lock, Bell, Shield, Eye, EyeOff } from 'lucide-react'
 
 const ROLE_LABEL: Record<string, string> = {
   AO: 'Account Officer',
@@ -19,6 +19,8 @@ export default function SettingsPage() {
   const [currentPwd, setCurrentPwd]   = useState('')
   const [newPwd, setNewPwd]           = useState('')
   const [confirmPwd, setConfirmPwd]   = useState('')
+  const [showNewPwd, setShowNewPwd]       = useState(false)
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false)
   const [pwdLoading, setPwdLoading]   = useState(false)
   const [pwdMsg, setPwdMsg]           = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
@@ -85,13 +87,25 @@ export default function SettingsPage() {
         <form onSubmit={handleChangePassword} className="p-4 space-y-3">
           <div>
             <label className="block text-[10px] font-medium text-[#002470] mb-1">Password Baru</label>
-            <input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)}
-              className={inputCls} placeholder="Minimal 8 karakter" required />
+            <div className="relative">
+              <input type={showNewPwd ? 'text' : 'password'} value={newPwd} onChange={(e) => setNewPwd(e.target.value)}
+                className={inputCls + ' pr-10'} placeholder="Minimal 8 karakter" required />
+              <button type="button" onClick={() => setShowNewPwd((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showNewPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
           <div>
             <label className="block text-[10px] font-medium text-[#002470] mb-1">Konfirmasi Password Baru</label>
-            <input type="password" value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)}
-              className={inputCls} placeholder="Ulangi password baru" required />
+            <div className="relative">
+              <input type={showConfirmPwd ? 'text' : 'password'} value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)}
+                className={inputCls + ' pr-10'} placeholder="Ulangi password baru" required />
+              <button type="button" onClick={() => setShowConfirmPwd((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showConfirmPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           {pwdMsg && (

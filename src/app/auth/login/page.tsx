@@ -1,34 +1,148 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
-import { ShieldCheck, Lock, Smartphone, ArrowRight, Eye, EyeOff, Loader2, Building2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { ShieldCheck, Lock, Smartphone, ArrowRight, Eye, EyeOff, Loader2, Building2, AlertTriangle } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { signIn } = useAuth()
+  const [wasKicked, setWasKicked] = useState(false)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setWasKicked(new URLSearchParams(window.location.search).get('reason') === 'kicked')
+    }
+  }, [])
+  const { signIn, signOut } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPwd, setShowPwd] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [kickModal, setKickModal] = useState<{
+    userId: string
+    sessionId: string
+    otherCount: number
+  } | null>(null)
+  const [kickLoading, setKickLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
-    const { error } = await signIn(email, password)
-    if (error) {
+    const { data, error } = await signIn(email, password)
+    if (error || !data?.user) {
       setError('Username/NIP atau password salah.')
+      setLoading(false)
+      return
+    }
+
+    // Generate session ID and detect other active sessions via Realtime Presence
+    const sessionId = crypto.randomUUID()
+    sessionStorage.setItem('brimos_session_id', sessionId)
+
+    const supabase = createClient()
+    const channel = supabase.channel(`brimos:session:${data.user.id}`)
+    let otherCount = 0
+
+    await new Promise<void>((resolve) => {
+      let resolved = false
+      const done = () => { if (!resolved) { resolved = true; resolve() } }
+      const timer = setTimeout(done, 2000)
+
+      channel.on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState<{ sessionId: string }>()
+        otherCount = Object.values(state)
+          .flat()
+          .filter((p) => p.sessionId !== sessionId).length
+        clearTimeout(timer)
+        done()
+      })
+
+      channel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ sessionId })
+        }
+      })
+    })
+
+    channel.unsubscribe()
+
+    if (otherCount > 0) {
+      setKickModal({ userId: data.user.id, sessionId, otherCount })
       setLoading(false)
     } else {
       router.replace('/dashboard')
     }
   }
 
+  const handleKick = async () => {
+    if (!kickModal) return
+    setKickLoading(true)
+    const supabase = createClient()
+    const channel = supabase.channel(`brimos:session:${kickModal.userId}`)
+
+    await new Promise<void>((resolve) => {
+      channel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          // Kick all sessions except this new one
+          await channel.send({
+            type: 'broadcast',
+            event: 'kick',
+            payload: { kickAll: true, except: kickModal.sessionId },
+          })
+          resolve()
+        }
+      })
+    })
+
+    setTimeout(() => channel.unsubscribe(), 500)
+    router.replace('/dashboard')
+  }
+
+  const handleCancelKick = async () => {
+    setKickModal(null)
+    await signOut()
+  }
+
   return (
     <div className="min-h-screen bg-[#003087] flex items-center justify-center p-6">
+      {/* Kick modal overlay */}
+      {kickModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-[300px] w-full shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-extrabold text-[#003087]">Akun Sedang Aktif</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">Sesi lain terdeteksi</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-gray-600 leading-relaxed mb-5">
+              Akun Anda aktif di <span className="font-bold text-[#003087]">{kickModal.otherCount}</span> perangkat lain.
+              Paksa keluar dari semua perangkat tersebut?
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCancelKick}
+                className="flex-1 border border-gray-200 rounded-lg py-2 text-[10px] font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleKick}
+                disabled={kickLoading}
+                className="flex-1 bg-[#003087] text-white rounded-lg py-2 text-[10px] font-bold hover:bg-[#002470] disabled:opacity-60 transition-colors flex items-center justify-center gap-1"
+              >
+                {kickLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Paksa Keluar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex gap-12 items-center max-w-[760px] w-full">
 
         {/* ── Left brand panel ── */}
@@ -65,6 +179,12 @@ export default function LoginPage() {
             <h2 className="text-sm font-extrabold text-[#003087] mb-1">Selamat Datang</h2>
             <p className="text-[10px] text-gray-400 mb-5">Masuk ke akun BRIMOS Anda</p>
 
+          {wasKicked && (
+            <div className="flex items-center gap-2 mb-4 bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2.5 rounded-lg">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <p className="text-[10px] font-medium">Sesi Anda diakhiri dari perangkat lain.</p>
+            </div>
+          )}
             <form onSubmit={handleSubmit} className="space-y-3.5">
               <div>
                 <label className="block text-[10px] font-bold text-gray-600 mb-1">

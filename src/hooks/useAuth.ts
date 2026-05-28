@@ -21,6 +21,16 @@ export function useAuth() {
   }, [supabase])
 
   useEffect(() => {
+    // Auto-logout: if no alive flag in sessionStorage, this is a fresh browser session
+    // sessionStorage is cleared when the browser/tab is closed (unlike localStorage)
+    const alive = typeof window !== 'undefined' ? sessionStorage.getItem('brimos_alive') : null
+    if (!alive) {
+      supabase.auth.signOut().finally(() => {
+        setState({ user: null, profile: null, loading: false })
+      })
+      return
+    }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const user = session?.user ?? null
       if (user) {
@@ -36,10 +46,17 @@ export function useAuth() {
 
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (!error && typeof window !== 'undefined') {
+      sessionStorage.setItem('brimos_alive', '1')
+    }
     return { data, error }
   }
 
   const signOut = async () => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('brimos_alive')
+      sessionStorage.removeItem('brimos_session_id')
+    }
     await supabase.auth.signOut()
   }
 
