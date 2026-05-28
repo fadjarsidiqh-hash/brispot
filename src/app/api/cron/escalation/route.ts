@@ -8,8 +8,15 @@ import { runEscalationCheck } from '@/lib/escalation'
  * Example cron schedule: every weekday at 08:00 WIB.
  */
 export async function GET(request: NextRequest) {
-  const secret = request.headers.get('x-cron-secret')
-  if (secret !== process.env.CRON_SECRET) {
+  // Accept either Vercel Cron's built-in Authorization header or our custom secret
+  const authHeader = request.headers.get('authorization')
+  const customSecret = request.headers.get('x-cron-secret')
+  const cronSecret = process.env.CRON_SECRET
+
+  const validVercelCron = authHeader === `Bearer ${cronSecret}`
+  const validCustom = customSecret === cronSecret
+
+  if (!validVercelCron && !validCustom) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

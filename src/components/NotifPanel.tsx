@@ -9,9 +9,10 @@ import { useAuth } from '@/hooks/useAuth'
 
 interface NotifPanelProps {
   onClose: () => void
+  onRead?: (countReduced: number) => void
 }
 
-export function NotifPanel({ onClose }: NotifPanelProps) {
+export function NotifPanel({ onClose, onRead }: NotifPanelProps) {
   const supabase = createClient()
   const { user } = useAuth()
   const [items, setItems] = useState<Notification[]>([])
@@ -38,16 +39,21 @@ export function NotifPanel({ onClose }: NotifPanelProps) {
   }, [onClose])
 
   const markRead = async (id: string) => {
+    const item = items.find((n) => n.id === id)
+    if (!item || item.is_read) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from('notifications').update({ is_read: true, read_at: new Date().toISOString() }).eq('id', id)
     setItems((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n))
+    onRead?.(1)
   }
 
   const markAllRead = async () => {
     if (!user) return
+    const unreadCount = items.filter((n) => !n.is_read).length
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from('notifications').update({ is_read: true }).eq('recipient_id', user.id).eq('is_read', false)
     setItems((prev) => prev.map((n) => ({ ...n, is_read: true })))
+    onRead?.(unreadCount)
   }
 
   return (

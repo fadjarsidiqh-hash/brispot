@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { Bell } from 'lucide-react'
 import { NotifPanel } from '@/components/NotifPanel'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 
 const NAV_LINKS = [
@@ -25,8 +26,38 @@ const ROLE_BADGE: Record<string, { bg: string; color: string }> = {
 
 export function Navbar() {
   const pathname = usePathname()
-  const { profile } = useAuth()
+  const { profile, user } = useAuth()
   const [showNotif, setShowNotif] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  // Fetch unread notification count and subscribe to real-time changes
+  useEffect(() => {
+    if (!user) return
+    const supabase = createClient()
+
+    const fetchCount = async () => {
+      const { count } = await supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('recipient_id', user.id)
+        .eq('is_read', false)
+      setUnreadCount(count ?? 0)
+    }
+
+    fetchCount()
+
+    // Subscribe to new notifications in real-time
+    const channel = supabase
+      .channel(`notif-count-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${user.id}` },
+        () => { fetchCount() }
+      )
+      .subscribe()
+
+    return () => { channel.unsubscribe() }
+  }, [user])
 
   const role = profile?.role ?? 'AO'
   const badge = ROLE_BADGE[role] ?? ROLE_BADGE.AO
@@ -78,11 +109,18 @@ export function Navbar() {
             className="relative p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
           >
             <Bell className="w-[17px] h-[17px]" />
-            <span className="absolute top-0.5 right-0.5 w-[7px] h-[7px] bg-[#CC0000] rounded-full border-[1.5px] border-[#002470]" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] bg-[#CC0000] text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 border border-[#002470]">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
           </button>
           {showNotif && (
             <div className="absolute right-0 top-full mt-1 z-50">
-              <NotifPanel onClose={() => setShowNotif(false)} />
+              <NotifPanel
+                onClose={() => setShowNotif(false)}
+                onRead={(n) => setUnreadCount((c) => Math.max(0, c - n))}
+              />
             </div>
           )}
         </div>
