@@ -29,10 +29,6 @@ export function Sidebar() {
         { href: '/kpi',             label: t.nav.kpi,             icon: BarChart2 },
       ],
     },
-    {
-      label: t.nav.laporan,
-      items: [{ href: '/audit-trail', label: t.nav.auditTrail, icon: ClipboardList }],
-    },
   ]
 
   const ADK_NAV: NavCategory[] = [
@@ -44,10 +40,6 @@ export function Sidebar() {
         { href: '/monitoring',     label: t.nav.monitoring,    icon: Activity },
         { href: '/kpi',            label: t.nav.kpi,           icon: BarChart2 },
       ],
-    },
-    {
-      label: t.nav.laporan,
-      items: [{ href: '/audit-trail', label: t.nav.auditTrail, icon: ClipboardList }],
     },
   ]
 
@@ -64,10 +56,6 @@ export function Sidebar() {
     {
       label: t.nav.team,
       items: [{ href: '/verifikasi', label: t.nav.verifikasi, icon: CheckSquare }],
-    },
-    {
-      label: t.nav.laporan,
-      items: [{ href: '/audit-trail', label: t.nav.auditTrail, icon: ClipboardList }],
     },
   ]
 

@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/hooks/useAuth'
 import type { AuditLog } from '@/types'
 import { formatDate } from '@/lib/utils'
 import { Search, Download, ClipboardList, FileText, CheckCircle2, AlertTriangle } from 'lucide-react'
@@ -25,6 +27,8 @@ const ACTION_PILL: Record<string, string> = {
 export default function AuditTrailPage() {
   const supabase = createClient()
   const { t } = useI18n()
+  const { profile } = useAuth()
+  const router = useRouter()
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -33,6 +37,11 @@ export default function AuditTrailPage() {
   const PAGE_SIZE = 25
 
   useEffect(() => {
+    if (profile && profile.role !== 'ADMIN') {
+      router.replace('/dashboard')
+      return
+    }
+    if (!profile) return
     setLoading(true)
     supabase
       .from('audit_logs')
@@ -44,7 +53,7 @@ export default function AuditTrailPage() {
         setLoading(false)
       })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [profile])
 
   const filtered = logs.filter((l) => {
     const matchSearch = !search ||
