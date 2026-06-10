@@ -18,7 +18,7 @@ export default function NotFound() {
 
         {/* Brand */}
         <div className="text-[22px] font-extrabold tracking-[2px] mb-1">
-          BRI<span className="text-[#f0b429]">MOS</span>
+          BRI<span className="text-[#f0b429]">SPOT</span>
         </div>
 
         {/* Message */}

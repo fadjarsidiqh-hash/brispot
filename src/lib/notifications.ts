@@ -52,20 +52,20 @@ export async function sendWhatsApp(payload: WAPayload): Promise<void> {
 
 export function buildDNOverdueEmail(dnNumber: string, debtorName: string, daysOverdue: number) {
   return {
-    subject: `[BRIMOS] DN ${dnNumber} Melewati Batas Waktu`,
+    subject: `[BRISPOT] DN ${dnNumber} Melewati Batas Waktu`,
     html: `
-      <h2>Notifikasi Keterlambatan Decision Note</h2>
+      <h2>Notifikasi Keterlambatan Catatan Pemutus (DN)</h2>
       <p>DN <strong>${dnNumber}</strong> atas nama <strong>${debtorName}</strong> telah melewati batas waktu penyelesaian kondisi selama <strong>${daysOverdue} hari kerja</strong>.</p>
-      <p>Segera tindaklanjuti melalui sistem BRIMOS.</p>
+      <p>Segera tindaklanjuti melalui sistem BRISPOT.</p>
     `,
   }
 }
 
 export function buildDNEscalationEmail(dnNumber: string, debtorName: string) {
   return {
-    subject: `[BRIMOS] ESKALASI DN ${dnNumber} ke BOH`,
+    subject: `[BRISPOT] ESKALASI DN ${dnNumber} ke BOH`,
     html: `
-      <h2>Eskalasi Decision Note ke BOH</h2>
+      <h2>Eskalasi Catatan Pemutus (DN) ke BOH</h2>
       <p>DN <strong>${dnNumber}</strong> atas nama <strong>${debtorName}</strong> telah <strong>dieskalasi ke Branch Operation Head (BOH)</strong> karena melebihi batas waktu eskalasi.</p>
     `,
   }

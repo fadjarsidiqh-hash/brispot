@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { runEscalationCheck } from '@/lib/escalation'
+import { runEscalationCheck, runConditionReminders } from '@/lib/escalation'
 
 /**
  * Cron endpoint for auto-escalation.
@@ -21,5 +21,6 @@ export async function GET(request: NextRequest) {
   }
 
   await runEscalationCheck()
+  await runConditionReminders()
   return NextResponse.json({ ok: true, ran_at: new Date().toISOString() })
 }

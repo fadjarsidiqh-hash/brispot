@@ -36,12 +36,13 @@ export function generateDNNumber(branchCode: string): string {
 
 export const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
-  SUBMITTED: 'Diajukan',
-  VERIFIED_DK: 'Terverifikasi DK',
-  VERIFIED_BOH: 'Terverifikasi BOH',
+  SUBMITTED: 'Diajukan ke BOH',
+  DECIDED_BOH: 'Diputuskan BOH',
+  VERIFIED_ADK: 'Terverifikasi ADK',
   COMPLETED: 'Selesai',
   ESCALATED: 'Dieskalasi',
   REJECTED: 'Ditolak',
+  NEEDS_REVISION: 'Perlu Revisi (Dokumen Kurang)',
   PENDING: 'Menunggu',
   IN_PROGRESS: 'Sedang Berjalan',
   OVERDUE: 'Terlambat',
@@ -51,11 +52,12 @@ export const STATUS_LABELS: Record<string, string> = {
 export const STATUS_COLORS: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-700',
   SUBMITTED: 'bg-blue-100 text-blue-700',
-  VERIFIED_DK: 'bg-yellow-100 text-yellow-700',
-  VERIFIED_BOH: 'bg-indigo-100 text-indigo-700',
+  DECIDED_BOH: 'bg-yellow-100 text-yellow-700',
+  VERIFIED_ADK: 'bg-indigo-100 text-indigo-700',
   COMPLETED: 'bg-green-100 text-green-700',
   ESCALATED: 'bg-red-100 text-red-700',
   REJECTED: 'bg-red-100 text-red-800',
+  NEEDS_REVISION: 'bg-orange-100 text-orange-700',
   PENDING: 'bg-gray-100 text-gray-700',
   IN_PROGRESS: 'bg-blue-100 text-blue-700',
   OVERDUE: 'bg-orange-100 text-orange-700',
@@ -67,4 +69,27 @@ export const PRIORITY_COLORS: Record<string, string> = {
   MEDIUM: 'bg-yellow-100 text-yellow-700',
   HIGH: 'bg-orange-100 text-orange-700',
   CRITICAL: 'bg-red-100 text-red-700',
+}
+
+// Label status monitoring sesuai flowchart BRISPOT (NEW / IN PROGRESS / WAITING VERIFICATION / CLOSED / OVERDUE)
+export type MonitoringStatus = 'NEW' | 'IN_PROGRESS' | 'WAITING_VERIFICATION' | 'CLOSED' | 'OVERDUE' | 'REJECTED'
+
+export function getMonitoringStatus(dn: { status: string; due_date?: string | null }): MonitoringStatus {
+  if (dn.status === 'REJECTED') return 'REJECTED'
+  if (dn.status === 'COMPLETED') return 'CLOSED'
+  const overdue = !!dn.due_date && new Date(dn.due_date) < new Date()
+  if (dn.status === 'ESCALATED' || overdue) return 'OVERDUE'
+  if (dn.status === 'SUBMITTED' || dn.status === 'DRAFT') return 'NEW'
+  if (dn.status === 'DECIDED_MANAGER' || dn.status === 'DECIDED_BOH') return 'IN_PROGRESS'
+  if (dn.status === 'VERIFIED_ADK') return 'WAITING_VERIFICATION'
+  return 'IN_PROGRESS'
+}
+
+export const MONITORING_META: Record<MonitoringStatus, { label: string; cls: string }> = {
+  NEW:                  { label: 'NEW',                  cls: 'bg-[#e8f0fe] text-[#003087]' },
+  IN_PROGRESS:          { label: 'IN PROGRESS',          cls: 'bg-[#fff8e1] text-[#b8890a]' },
+  WAITING_VERIFICATION: { label: 'WAITING VERIFICATION', cls: 'bg-[#f3e8ff] text-[#7c3aed]' },
+  CLOSED:               { label: 'CLOSED',               cls: 'bg-[#e8f5e9] text-[#16a34a]' },
+  OVERDUE:              { label: 'OVERDUE',              cls: 'bg-[#fff0f0] text-[#CC0000]' },
+  REJECTED:             { label: 'DITOLAK',              cls: 'bg-[#fef2f2] text-[#991b1b]' },
 }

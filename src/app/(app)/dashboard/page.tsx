@@ -2,11 +2,8 @@
 
 import { useAuth } from '@/hooks/useAuth'
 import { useDN } from '@/hooks/useDN'
-import { useKPI } from '@/hooks/useKPI'
-import { ProgressRing } from '@/components/charts/ProgressRing'
-import { BarChart } from '@/components/charts/BarChart'
-import { ProgressBar } from '@/components/charts/ProgressBar'
-import { STATUS_LABELS, formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
+import { useI18n } from '@/contexts/I18nContext'
 import Link from 'next/link'
 import { Bell, Plus } from 'lucide-react'
 
@@ -34,20 +31,10 @@ const DN_PILL: Record<string, string> = {
   ESCALATED:    'bg-[#fff0f0] text-[#CC0000]',
   COMPLETED:    'bg-[#e8f5e9] text-[#16a34a]',
   SUBMITTED:    'bg-[#e8f0fe] text-[#003087]',
-  VERIFIED_DK:  'bg-[#fffbe0] text-[#b8890a]',
-  VERIFIED_BOH: 'bg-[#f3e8ff] text-[#7c3aed]',
+  DECIDED_BOH:  'bg-[#fffbe0] text-[#b8890a]',
+  VERIFIED_ADK: 'bg-[#f3e8ff] text-[#7c3aed]',
   DRAFT:        'bg-[#f0f2f7] text-[#718096]',
   REJECTED:     'bg-[#fff0f0] text-[#CC0000]',
-}
-
-const DN_PILL_LABEL: Record<string, string> = {
-  ESCALATED:    'Overdue',
-  COMPLETED:    'Closed',
-  SUBMITTED:    'Diajukan',
-  VERIFIED_DK:  'Terverif DK',
-  VERIFIED_BOH: 'Terverif BOH',
-  DRAFT:        'Draft',
-  REJECTED:     'Ditolak',
 }
 
 function getDNBorderColor(status: string, dueDate: string | null) {
@@ -65,7 +52,7 @@ function getDNBorderColor(status: string, dueDate: string | null) {
 export default function DashboardPage() {
   const { profile } = useAuth()
   const { list: dns } = useDN()
-  const { target, realization, monthlyTrend } = useKPI(profile?.branch_code ?? '')
+  const { t } = useI18n()
 
 
 
@@ -80,9 +67,25 @@ export default function DashboardPage() {
     const diff = (new Date(d.due_date).getTime() - Date.now()) / 864e5
     return diff >= 0 && diff <= 3
   }).length
-  const completionRate = realization?.completion_rate ?? (totalDN > 0 ? Math.round((completed / totalDN) * 100) : 0)
+
+  // BOH-specific stats
+  const isBOH = profile?.role === 'BOH' || profile?.role === 'ADMIN'
+  const bohPending  = dns.filter((d) => d.status === 'SUBMITTED').length
+  const bohApproved = dns.filter((d) => d.boh_id === profile?.id && ['DECIDED_BOH','VERIFIED_ADK','COMPLETED'].includes(d.status)).length
+  const bohRejected = dns.filter((d) => d.boh_id === profile?.id && d.status === 'REJECTED').length
   const recent = dns.slice(0, 6)
-  const today  = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const today  = new Date().toLocaleDateString(t.common.noData === 'No data yet' ? 'en-GB' : 'id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+
+  const DN_PILL_LABEL: Record<string, string> = {
+    ESCALATED:    t.dashboard.statusEscalated,
+    COMPLETED:    t.dashboard.statusCompleted,
+    SUBMITTED:    t.dashboard.statusSubmitted,
+    DECIDED_BOH:  t.dashboard.statusDecidedBOH,
+    VERIFIED_ADK: t.dashboard.statusVerifiedADK,
+    DRAFT:        t.dashboard.statusDraft,
+    REJECTED:     t.dashboard.statusRejected,
+    NEEDS_REVISION: t.dashboard.statusRevision,
+  }
 
   return (
     <div className="space-y-4">
@@ -90,29 +93,52 @@ export default function DashboardPage() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-[13px] font-bold text-[#002470]">
-            Selamat Pagi, {profile?.full_name?.split(' ')[0] ?? 'User'} 👋
+            {t.dashboard.greeting(profile?.full_name?.split(' ')[0] ?? 'User')}
           </h1>
           <p className="text-[10px] text-[#9ca3af] mt-0.5">
             {profile?.branch_name ?? profile?.branch_code} · {today}
           </p>
         </div>
-        <Link
-          href="/decision-notes/new"
-          className="flex items-center gap-1.5 px-4 py-2 bg-[#003087] text-white text-[11px] font-bold rounded-lg hover:bg-[#002470] transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" /> Decision Note Baru
-        </Link>
+        {(profile?.role === 'RM' || profile?.role === 'ADMIN') && (
+          <Link
+            href="/decision-notes/new"
+            className="flex items-center gap-1.5 px-4 py-2 bg-[#003087] text-white text-[11px] font-bold rounded-lg hover:bg-[#002470] transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" /> {t.dashboard.newDN}
+          </Link>
+        )}
       </div>
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        <StatCard label="Total DN Aktif"         value={active}    badgeText="Berjalan"       variant="blue"  />
-        <StatCard label="Outstanding / Overdue"  value={overdue}   badgeText="Perlu Aksi"     variant="red"   />
-        <StatCard label="Mendekati Due Date"      value={nearDue}   badgeText="≤ 3 Hari Kerja" variant="gold"  />
-        <StatCard label="Closed Bulan Ini"        value={completed} badgeText="Selesai"        variant="green" />
+        <StatCard label={t.dashboard.activeDN}    value={active}    badgeText={t.dashboard.badgeRunning}  variant="blue"  />
+        <StatCard label={t.dashboard.overdue}      value={overdue}   badgeText={t.dashboard.badgeAction}   variant="red"   />
+        <StatCard label={t.dashboard.nearDue}      value={nearDue}   badgeText={t.dashboard.badge3Days}    variant="gold"  />
+        <StatCard label={t.dashboard.closedMonth}  value={completed} badgeText={t.dashboard.badgeDone}     variant="green" />
       </div>
 
-      {/* Main grid: left (DN list + bar chart) · right (KPI ring + notif) */}
+      {/* BOH Decision Summary */}
+      {isBOH && (
+        <div className="grid grid-cols-3 gap-2.5">
+          <div className="bg-white rounded-[10px] p-3.5 border border-[#e8ecf4] border-t-4 border-t-[#718096] shadow-[0_1px_3px_rgba(0,36,112,0.07)]">
+            <div className="text-[9px] text-[#9ca3af] font-medium mb-0.5">Menunggu Keputusan BOH</div>
+            <div className="text-3xl font-extrabold leading-none mt-1 text-[#718096]">{bohPending}</div>
+            <span className="inline-block text-[8px] font-semibold px-1.5 py-0.5 rounded-lg mt-2 bg-[#f0f2f7] text-[#718096]">Diajukan RM</span>
+          </div>
+          <div className="bg-white rounded-[10px] p-3.5 border border-[#e8ecf4] border-t-4 border-t-[#22c55e] shadow-[0_1px_3px_rgba(0,36,112,0.07)]">
+            <div className="text-[9px] text-[#9ca3af] font-medium mb-0.5">Disetujui oleh Saya</div>
+            <div className="text-3xl font-extrabold leading-none mt-1 text-[#22c55e]">{bohApproved}</div>
+            <span className="inline-block text-[8px] font-semibold px-1.5 py-0.5 rounded-lg mt-2 bg-[#e8f5e9] text-[#16a34a]">Putus BOH</span>
+          </div>
+          <div className="bg-white rounded-[10px] p-3.5 border border-[#e8ecf4] border-t-4 border-t-[#CC0000] shadow-[0_1px_3px_rgba(0,36,112,0.07)]">
+            <div className="text-[9px] text-[#9ca3af] font-medium mb-0.5">Ditolak oleh Saya</div>
+            <div className="text-3xl font-extrabold leading-none mt-1 text-[#CC0000]">{bohRejected}</div>
+            <span className="inline-block text-[8px] font-semibold px-1.5 py-0.5 rounded-lg mt-2 bg-[#fff0f0] text-[#CC0000]">Ditolak BOH</span>
+          </div>
+        </div>
+      )}
+
+      {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-3">
 
         {/* ── Left column ── */}
@@ -120,14 +146,14 @@ export default function DashboardPage() {
           {/* DN list */}
           <div className="bg-white rounded-[10px] border border-[#e8ecf4] shadow-[0_1px_3px_rgba(0,36,112,0.07)] p-3.5">
             <div className="flex justify-between items-center mb-3">
-              <span className="text-[11px] font-bold text-[#002470]">Decision Notes Aktif</span>
+              <span className="text-[11px] font-bold text-[#002470]">{t.dashboard.activeDNList}</span>
               <Link href="/decision-notes" className="text-[9px] text-[#003087] font-medium hover:underline">
-                Lihat Semua →
+                {t.common.viewAll}
               </Link>
             </div>
             <div className="space-y-1.5">
               {recent.length === 0 ? (
-                <p className="text-[11px] text-gray-400 text-center py-8">Belum ada DN</p>
+                <p className="text-[11px] text-gray-400 text-center py-8">{t.common.noData}</p>
               ) : (
                 recent.map((dn) => (
                   <Link
@@ -139,11 +165,11 @@ export default function DashboardPage() {
                       <div className="text-[10px] font-semibold text-[#002470] truncate">{dn.debtor_name}</div>
                       <div className="text-[8px] text-[#9ca3af] mt-0.5">
                         {dn.credit_type} · {formatCurrency(dn.credit_amount)}
-                        {dn.due_date ? ` · Due: ${formatDate(dn.due_date)}` : ''}
+                        {dn.due_date ? ` · ${t.dashboard.dueSuffix} ${formatDate(dn.due_date)}` : ''}
                       </div>
                     </div>
                     <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-[10px] whitespace-nowrap ml-2 ${DN_PILL[dn.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {DN_PILL_LABEL[dn.status] ?? STATUS_LABELS[dn.status]}
+                      {DN_PILL_LABEL[dn.status] ?? (t.status as Record<string, string>)[dn.status] ?? dn.status}
                     </span>
                   </Link>
                 ))
@@ -151,52 +177,17 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Bar chart */}
-          <div className="bg-white rounded-[10px] border border-[#e8ecf4] shadow-[0_1px_3px_rgba(0,36,112,0.07)] p-3.5">
-            <BarChart
-              title="Realisasi DN Bulanan"
-              data={monthlyTrend.map((m) => ({ label: m.label, completed: m.completed, total: m.total }))}
-            />
-          </div>
         </div>
 
         {/* ── Right column ── */}
         <div className="space-y-3">
-          {/* KPI ring */}
-          <div className="bg-white rounded-[10px] border border-[#e8ecf4] shadow-[0_1px_3px_rgba(0,36,112,0.07)] p-3.5">
-            <div className="text-[11px] font-bold text-[#002470] mb-3">KPI Realisasi</div>
-            <div className="flex items-center gap-4">
-              <ProgressRing
-                value={completionRate}
-                size={90}
-                strokeWidth={9}
-                label="Tercapai"
-              />
-              <div className="flex-1 space-y-2 min-w-0">
-                <div>
-                  <div className="text-[9px] text-[#9ca3af]">Realisasi Bulan Ini</div>
-                  <div className="text-sm font-extrabold text-[#003087]">
-                    {realization?.completed_dn ?? completed} DN
-                  </div>
-                  <div className="text-[8px] text-[#9ca3af]">Target: {target?.target_completed ?? '—'} DN</div>
-                </div>
-                <ProgressBar value={completionRate} label="Penyelesaian" color="bg-[#003087]" />
-                <ProgressBar
-                  value={realization ? Math.max(0, 100 - Math.round((realization.overdue_dn / Math.max(realization.total_dn, 1)) * 100)) : 100}
-                  label="Ketepatan Waktu"
-                  color="bg-[#22c55e]"
-                />
-              </div>
-            </div>
-          </div>
-
           {/* Notifications */}
           <div className="bg-white rounded-[10px] border border-[#e8ecf4] shadow-[0_1px_3px_rgba(0,36,112,0.07)] p-3.5">
             <div className="flex items-center gap-2 text-[11px] font-bold text-[#002470] mb-3">
-              <Bell className="w-3.5 h-3.5" /> Notifikasi &amp; Reminder
+              <Bell className="w-3.5 h-3.5" /> {t.dashboard.notifTitle}
             </div>
             {overdue === 0 && nearDue === 0 ? (
-              <p className="text-[11px] text-gray-400 py-4 text-center">Tidak ada notifikasi mendesak ✓</p>
+              <p className="text-[11px] text-gray-400 py-4 text-center">{t.dashboard.noUrgent}</p>
             ) : (
               <div className="space-y-0">
                 {dns.filter((d) => d.status === 'ESCALATED').slice(0, 3).map((dn) => (
@@ -204,10 +195,10 @@ export default function DashboardPage() {
                     <div className="w-1.5 h-1.5 rounded-full bg-[#CC0000] mt-1.5 shrink-0" />
                     <div className="min-w-0">
                       <p className="text-[10px] text-[#4a5568] leading-snug truncate">
-                        <strong>{dn.debtor_name}</strong> — overdue, perlu tindaklanjut
+                        <strong>{dn.debtor_name}</strong> — {t.dashboard.overdueAction}
                       </p>
                       <p className="text-[8px] text-[#9ca3af] mt-0.5">
-                        {dn.due_date ? formatDate(dn.due_date) : 'Sudah lewat deadline'}
+                        {dn.due_date ? formatDate(dn.due_date) : t.dashboard.pastDeadline}
                       </p>
                     </div>
                   </div>
@@ -216,7 +207,7 @@ export default function DashboardPage() {
                   <div className="flex items-start gap-2 py-2">
                     <div className="w-1.5 h-1.5 rounded-full bg-[#f0b429] mt-1.5 shrink-0" />
                     <p className="text-[10px] text-[#4a5568]">
-                      {nearDue} DN mendekati due date ≤ 3 hari kerja
+                      {t.dashboard.nearDueLabel(nearDue)}
                     </p>
                   </div>
                 )}

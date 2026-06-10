@@ -1,32 +1,30 @@
 'use client'
 
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { Bell } from 'lucide-react'
+import Image from 'next/image'
+import Link from 'next/link'
 import { NotifPanel } from '@/components/NotifPanel'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { cn } from '@/lib/utils'
-
-const NAV_LINKS = [
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/decision-notes', label: 'Decision Notes' },
-  { href: '/monitoring', label: 'Monitoring' },
-  { href: '/kpi', label: 'KPI' },
-  { href: '/audit-trail', label: 'Laporan' },
-]
+import { useI18n } from '@/contexts/I18nContext'
+import PushNotifButton from '@/components/PushNotifButton'
 
 const ROLE_BADGE: Record<string, { bg: string; color: string }> = {
-  AO:    { bg: '#f0b429', color: '#002470' },
-  DK:    { bg: '#CC0000', color: '#ffffff' },
-  BOH:   { bg: '#f0b429', color: '#002470' },
-  ADMIN: { bg: '#003087', color: '#ffffff' },
+  RM:      { bg: '#f0b429', color: '#002470' },
+  ADK:     { bg: '#CC0000', color: '#ffffff' },
+  BOH:     { bg: '#f0b429', color: '#002470' },
+  MANAGER: { bg: '#00897b', color: '#ffffff' },
+  ADMIN:   { bg: '#003087', color: '#ffffff' },
+}
+
+const ROLE_BADGE_LABEL: Record<string, string> = {
+  RM: 'RM', ADK: 'ADK', BOH: 'BOH', MANAGER: 'CBM', ADMIN: 'ADMIN',
 }
 
 export function Navbar() {
-  const pathname = usePathname()
   const { profile, user } = useAuth()
+  const { lang, toggleLang, t } = useI18n()
   const [showNotif, setShowNotif] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
 
@@ -51,7 +49,7 @@ export function Navbar() {
       .channel(`notif-count-${user.id}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${user.id}` },
+        { event: '*', schema: 'brimos', table: 'notifications', filter: `recipient_id=eq.${user.id}` },
         () => { fetchCount() }
       )
       .subscribe()
@@ -59,8 +57,8 @@ export function Navbar() {
     return () => { channel.unsubscribe() }
   }, [user])
 
-  const role = profile?.role ?? 'AO'
-  const badge = ROLE_BADGE[role] ?? ROLE_BADGE.AO
+  const role = profile?.role ?? 'RM'
+  const badge = ROLE_BADGE[role] ?? ROLE_BADGE.RM
   const initials = profile?.full_name
     ?.split(' ')
     .slice(0, 2)
@@ -71,38 +69,37 @@ export function Navbar() {
     <header className="bg-[#002470] h-12 flex items-center justify-between px-5 shrink-0 z-20 relative">
       {/* Brand */}
       <div className="flex items-center gap-3 shrink-0">
-        <span className="text-white font-extrabold text-base tracking-widest select-none">
-          BRI<span className="text-[#f0b429]">MOS</span>
-        </span>
+        <div className="flex items-center gap-2 select-none">
+          <div className="bg-white rounded-md p-0.5 flex items-center justify-center shadow-sm">
+            <Image src="/brispot.png" alt="BRISPOT" width={24} height={24} className="rounded" priority />
+          </div>
+          <span className="text-white font-extrabold text-base tracking-widest">
+            BRI<span className="text-[#f0b429]">SPOT</span>
+          </span>
+        </div>
         <div className="w-px h-4 bg-white/20" />
-        <span className="text-white/50 text-[11px] font-medium hidden lg:block">
-          BRI Monitoring &amp; Oversight System
+        <span className="text-white/80 text-[11px] font-medium hidden lg:block">
+          {t.nav.brandTagline}
         </span>
       </div>
 
-      {/* Nav links */}
-      <nav className="hidden md:flex items-center gap-6 h-full">
-        {NAV_LINKS.map((link) => {
-          const active = pathname === link.href || pathname.startsWith(link.href + '/')
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={cn(
-                'text-[11px] font-medium h-full flex items-center border-b-2 transition-colors',
-                active
-                  ? 'text-[#f0b429] border-[#f0b429] font-semibold'
-                  : 'text-white/55 border-transparent hover:text-white/85 hover:border-white/20'
-              )}
-            >
-              {link.label}
-            </Link>
-          )
-        })}
-      </nav>
+      {/* Nav links removed — navigation lives in the sidebar to avoid duplication */}
 
-      {/* Right: Bell + User */}
+      {/* Right: Lang toggle + Push notif + Bell + User */}
       <div className="flex items-center gap-2.5 shrink-0">
+
+        {/* Language toggle */}
+        <button
+          onClick={toggleLang}
+          className="flex items-center gap-1 text-white/60 hover:text-white hover:bg-white/10 rounded px-2 py-1 text-[9px] font-bold transition-colors"
+          title={lang === 'id' ? 'Switch to English' : 'Ganti ke Bahasa Indonesia'}
+        >
+          <span className="text-[11px] leading-none">{lang === 'id' ? '🇮🇩' : '🇬🇧'}</span>
+          <span>{lang === 'id' ? 'ID' : 'EN'}</span>
+        </button>
+
+        {/* Push notification toggle */}
+        <PushNotifButton />
         <div className="relative">
           <button
             onClick={() => setShowNotif((v) => !v)}
@@ -126,6 +123,7 @@ export function Navbar() {
         </div>
 
         {/* Avatar */}
+        <Link href="/profile" className="flex items-center gap-2.5 rounded-lg px-1.5 py-1 hover:bg-white/10 transition-colors" title="Profil & ganti password">
         <div
           className="w-[30px] h-[30px] rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 overflow-hidden"
           style={{ background: badge.bg, color: badge.color }}
@@ -138,15 +136,16 @@ export function Navbar() {
 
         <div className="hidden sm:block leading-none">
           <p className="text-white text-[11px] font-semibold">{profile?.full_name ?? '—'}</p>
-          <p className="text-white/45 text-[9px] mt-0.5">{profile?.branch_name ?? profile?.branch_code ?? ''}</p>
+          <p className="text-white/75 text-[9px] mt-0.5">{profile?.branch_name ?? profile?.branch_code ?? ''}</p>
         </div>
 
         <span
           className="text-[9px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
           style={{ background: badge.bg, color: badge.color }}
         >
-          {role}
+          {ROLE_BADGE_LABEL[role] ?? role}
         </span>
+        </Link>
       </div>
     </header>
   )

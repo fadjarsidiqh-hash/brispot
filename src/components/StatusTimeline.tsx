@@ -3,41 +3,75 @@
 import { Check, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const STEPS = [
-  { key: 'DRAFT',        shortLabel: 'Draft' },
-  { key: 'SUBMITTED',    shortLabel: 'Diajukan' },
-  { key: 'VERIFIED_DK',  shortLabel: 'Verif DK' },
-  { key: 'VERIFIED_BOH', shortLabel: 'Verif BOH' },
-  { key: 'COMPLETED',    shortLabel: 'Closed' },
+// Threshold above which a DN must pass through BOH (in addition to Manager)
+const BOH_THRESHOLD = 1_000_000_000
+
+// Full pipeline including the BOH step (credit_amount > threshold)
+const STEPS_WITH_BOH = [
+  { key: 'DRAFT',           shortLabel: 'Draft' },
+  { key: 'SUBMITTED',       shortLabel: 'Ke Pemutus' },
+  { key: 'DECIDED_MANAGER', shortLabel: 'Putus CBM' },
+  { key: 'DECIDED_BOH',     shortLabel: 'Putus BOH' },
+  { key: 'VERIFIED_ADK',    shortLabel: 'Verif ADK' },
+  { key: 'COMPLETED',       shortLabel: 'Closed' },
 ] as const
 
-const STATUS_ORDER: Record<string, number> = {
-  DRAFT: 0, SUBMITTED: 1, VERIFIED_DK: 2, VERIFIED_BOH: 3, COMPLETED: 4,
+// Shorter pipeline: Manager decides then straight to ADK (credit_amount <= threshold)
+const STEPS_NO_BOH = [
+  { key: 'DRAFT',           shortLabel: 'Draft' },
+  { key: 'SUBMITTED',       shortLabel: 'Ke Pemutus' },
+  { key: 'DECIDED_MANAGER', shortLabel: 'Putus CBM' },
+  { key: 'VERIFIED_ADK',    shortLabel: 'Verif ADK' },
+  { key: 'COMPLETED',       shortLabel: 'Closed' },
+] as const
+
+const ORDER_WITH_BOH: Record<string, number> = {
+  DRAFT: 0, SUBMITTED: 1, DECIDED_MANAGER: 2, DECIDED_BOH: 3, VERIFIED_ADK: 4, COMPLETED: 5,
+  ESCALATED: 1, REJECTED: -1,
+}
+const ORDER_NO_BOH: Record<string, number> = {
+  DRAFT: 0, SUBMITTED: 1, DECIDED_MANAGER: 2, VERIFIED_ADK: 3, COMPLETED: 4,
   ESCALATED: 1, REJECTED: -1,
 }
 
 interface StatusTimelineProps {
   status: string
+  creditAmount?: number | null
+  slikStatus?: string | null
   timestamps?: {
     submitted_at?: string | null
-    verified_dk_at?: string | null
-    verified_boh_at?: string | null
+    decided_manager_at?: string | null
+    decided_boh_at?: string | null
+    verified_adk_at?: string | null
     completed_at?: string | null
   }
 }
 
-export function StatusTimeline({ status, timestamps }: StatusTimelineProps) {
+export function StatusTimeline({ status, creditAmount, slikStatus, timestamps }: StatusTimelineProps) {
+  const requiresBoh = (creditAmount ?? 0) > BOH_THRESHOLD || slikStatus === 'MERAH'
+  const STEPS       = requiresBoh ? STEPS_WITH_BOH : STEPS_NO_BOH
+  const STATUS_ORDER = requiresBoh ? ORDER_WITH_BOH : ORDER_NO_BOH
+
   const currentIdx  = STATUS_ORDER[status] ?? 0
   const isEscalated = status === 'ESCALATED'
   const isRejected  = status === 'REJECTED'
 
-  const stepDates = [
-    undefined,
-    timestamps?.submitted_at,
-    timestamps?.verified_dk_at,
-    timestamps?.verified_boh_at,
-    timestamps?.completed_at,
-  ]
+  const stepDates = requiresBoh
+    ? [
+        undefined,
+        timestamps?.submitted_at,
+        timestamps?.decided_manager_at,
+        timestamps?.decided_boh_at,
+        timestamps?.verified_adk_at,
+        timestamps?.completed_at,
+      ]
+    : [
+        undefined,
+        timestamps?.submitted_at,
+        timestamps?.decided_manager_at,
+        timestamps?.verified_adk_at,
+        timestamps?.completed_at,
+      ]
 
   return (
     <div className="flex items-start w-full py-2 overflow-x-auto">

@@ -1,6 +1,6 @@
 {
-  "name": "BRIMOS",
-  "short_name": "BRIMOS",
+  "name": "BRISPOT",
+  "short_name": "BRISPOT",
   "description": "BRI Monitoring & Oversight System",
   "start_url": "/dashboard",
   "display": "standalone",

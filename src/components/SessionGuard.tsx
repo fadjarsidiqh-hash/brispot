@@ -1,21 +1,65 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
 
+/** Auto-logout after this many milliseconds of inactivity */
+const INACTIVITY_LIMIT_MS = 15 * 60 * 1000 // 15 minutes
+const LAST_ACTIVITY_KEY   = 'brimos_last_activity'
+
 /**
  * SessionGuard — wraps all authenticated pages.
+ * - Redirects to login when user is null (logout, browser-close, token expiry)
+ * - Auto-logouts after 15 minutes of inactivity
  * - Registers this tab's session via Realtime Presence
  * - Listens for 'kick' broadcast from a new login on another device
- * - Shows a fullscreen overlay and redirects to login when kicked
  */
 export function SessionGuard({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth()
+  const { user, loading, signOut } = useAuth()
   const router = useRouter()
   const [kicked, setKicked] = useState(false)
 
+  // ── Redirect to login when not authenticated ────────────────────────────
+  useEffect(() => {
+    if (!loading && !user && !kicked) {
+      router.replace('/auth/login')
+    }
+  }, [user, loading, kicked, router])
+
+  // ── Inactivity auto-logout (15 min) ─────────────────────────────────────
+  const inactivityTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+
+    const updateActivity = () => {
+      localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()))
+    }
+
+    // Record activity on any meaningful user interaction
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'] as const
+    events.forEach((e) => window.addEventListener(e, updateActivity, { passive: true }))
+    updateActivity() // initialise on mount
+
+    // Check every 30 s whether the user has been idle > 15 min
+    inactivityTimer.current = setInterval(() => {
+      const last = Number(localStorage.getItem(LAST_ACTIVITY_KEY) ?? Date.now())
+      if (Date.now() - last > INACTIVITY_LIMIT_MS) {
+        clearInterval(inactivityTimer.current!)
+        signOut()
+        router.replace('/auth/login?reason=inactive')
+      }
+    }, 30_000)
+
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, updateActivity))
+      if (inactivityTimer.current) clearInterval(inactivityTimer.current)
+    }
+  }, [user, signOut, router])
+
+  // ── Kick via Realtime broadcast ──────────────────────────────────────────
   useEffect(() => {
     if (!user) return
 
@@ -66,6 +110,9 @@ export function SessionGuard({ children }: { children: React.ReactNode }) {
       </div>
     )
   }
+
+  // While redirecting (user gone, not kicked), render nothing to avoid flash
+  if (!loading && !user) return null
 
   return <>{children}</>
 }

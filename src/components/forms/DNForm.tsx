@@ -1,364 +1,401 @@
 'use client'
 
-import { useState } from 'react'
-import { useForm, useFieldArray, type Resolver } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
-import { generateDNNumber } from '@/lib/utils'
+import { generateDNNumber, formatCurrency } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, ChevronRight, ChevronLeft, Loader2 } from 'lucide-react'
+import { Loader2, ChevronRight, ChevronLeft, CheckCircle2, User, CreditCard, FileText, Eye } from 'lucide-react'
+import { useI18n } from '@/contexts/I18nContext'
 
-// ─── Zod Schema ───────────────────────────────────────────────────
-const schema = z.object({
-  debtor_name: z.string().min(2, 'Nama debitur wajib diisi'),
-  debtor_cif: z.string().min(3, 'CIF wajib diisi'),
-  credit_type: z.string().min(2, 'Jenis kredit wajib diisi'),
-  credit_amount: z.coerce.number().positive('Jumlah kredit harus positif'),
-  dn_number: z.string().min(3, 'Nomor DN wajib diisi'),
-  title: z.string().min(5, 'Judul wajib diisi'),
-  approval_date: z.string().min(1, 'Tanggal persetujuan wajib diisi'),
-  approval_number: z.string().optional(),
-  conditions: z.array(z.object({
-    condition_text: z.string().min(5, 'Isi kondisi wajib diisi'),
-    condition_type: z.string().default('STANDARD'),
-    due_date: z.string().min(1, 'Tanggal batas wajib diisi'),
-    assigned_to: z.string().optional(),
-  })).min(1, 'Minimal 1 kondisi'),
-  followup_actions: z.array(z.object({
-    action_text: z.string().min(5, 'Isi tindak lanjut wajib diisi'),
-    due_date: z.string().min(1, 'Tanggal batas wajib diisi'),
-    assigned_to: z.string().optional(),
-  })),
-  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).default('MEDIUM'),
-  notes: z.string().optional(),
-})
+type FormValues = {
+  debtor_name: string
+  debtor_cif: string
+  debtor_nik: string
+  debtor_phone: string
+  credit_type: string
+  credit_type_other: string
+  credit_amount: string   // string for display
+  credit_application_date: string
+  slik_status: string
+  pic_type: string
+  title: string
+}
 
-type DNFormValues = z.infer<typeof schema>
+type StepErrors = Partial<Record<keyof FormValues, string>>
 
-const STEPS = ['Data Debitur', 'Info Persetujuan', 'Kondisi', 'Tindak Lanjut', 'Review & Submit']
+const STEPS = [
+  { label: 'Data Debitur',  icon: User },
+  { label: 'Info Kredit',   icon: CreditCard },
+  { label: 'Dokumen',       icon: FileText },
+  { label: 'Review',        icon: Eye },
+]
+
+function formatThousands(value: string): string {
+  const digits = value.replace(/\D/g, '')
+  if (!digits) return ''
+  return Number(digits).toLocaleString('en-US')
+}
+
+function validateStep(step: number, values: FormValues): StepErrors {
+  const errs: StepErrors = {}
+  if (step === 0) {
+    if (!values.debtor_name.trim()) errs.debtor_name = 'Nama debitur wajib diisi'
+    if (!/^\d{16}$/.test(values.debtor_nik)) errs.debtor_nik = 'NIK harus tepat 16 digit angka'
+    if (!values.debtor_phone.trim() || values.debtor_phone.length < 9) errs.debtor_phone = 'Nomor HP minimal 9 digit'
+    if (!values.debtor_cif.trim()) errs.debtor_cif = 'CIF wajib diisi'
+  }
+  if (step === 1) {
+    if (!values.credit_type) errs.credit_type = 'Jenis kredit wajib dipilih'
+    if (values.credit_type === 'OTHER' && !values.credit_type_other.trim()) errs.credit_type_other = 'Tulis jenis kredit lainnya'
+    const amt = Number(values.credit_amount.replace(/,/g, ''))
+    if (!amt || amt <= 0) errs.credit_amount = 'Plafond kredit wajib diisi'
+    if (!values.credit_application_date) errs.credit_application_date = 'Tanggal pengajuan wajib diisi'
+    if (!values.slik_status) errs.slik_status = 'Status SLIK wajib dipilih'
+  }
+  if (step === 2) {
+    if (!values.title.trim() || values.title.length < 5) errs.title = 'Judul DN minimal 5 karakter'
+  }
+  return errs
+}
 
 export function DNForm() {
-  const router = useRouter()
-  const supabase = createClient()
+  const router      = useRouter()
+  const supabase    = createClient()
   const { profile } = useAuth()
-  const [step, setStep] = useState(0)
+  const { lang }    = useI18n()
+  const [step, setStep]           = useState(0)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [errors, setErrors]       = useState<StepErrors>({})
+  const [dnNumber, setDnNumber]   = useState(() => generateDNNumber('XXX'))
+  const [slikFile, setSlikFile]   = useState<File | null>(null)
 
-  const form = useForm<DNFormValues>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(schema) as unknown as Resolver<DNFormValues>,
-    defaultValues: {
-      conditions: [{ condition_text: '', condition_type: 'STANDARD', due_date: '', assigned_to: '' }],
-      followup_actions: [],
-      priority: 'MEDIUM',
-    },
+  const [values, setValues] = useState<FormValues>({
+    debtor_name: '', debtor_cif: '', debtor_nik: '', debtor_phone: '',
+    credit_type: '', credit_type_other: '', credit_amount: '',
+    credit_application_date: '', slik_status: '', pic_type: 'RM', title: '',
   })
 
-  const { fields: condFields, append: appendCond, remove: removeCond } = useFieldArray({ control: form.control, name: 'conditions' })
-  const { fields: fuFields, append: appendFU, remove: removeFU } = useFieldArray({ control: form.control, name: 'followup_actions' })
+  useEffect(() => {
+    if (profile?.branch_code) setDnNumber(generateDNNumber(profile.branch_code))
+  }, [profile?.branch_code])
 
-  const stepFields: (keyof DNFormValues)[][] = [
-    ['debtor_name', 'debtor_cif', 'credit_type', 'credit_amount'],
-    ['dn_number', 'title', 'approval_date', 'approval_number'],
-    ['conditions'],
-    ['followup_actions'],
-    ['priority', 'notes'],
-  ]
-
-  const goNext = async () => {
-    const valid = await form.trigger(stepFields[step] as (keyof DNFormValues)[])
-    if (valid) setStep((s) => Math.min(s + 1, STEPS.length - 1))
+  function set(field: keyof FormValues, val: string) {
+    setValues((prev) => ({ ...prev, [field]: val }))
+    if (errors[field]) setErrors((prev) => { const e = { ...prev }; delete e[field]; return e })
   }
 
-  const onSubmit = async (values: DNFormValues) => {
+  function nextStep() {
+    const errs = validateStep(step, values)
+    if (Object.keys(errs).length > 0) { setErrors(errs); return }
+    setErrors({})
+    setStep((s) => Math.min(s + 1, 3))
+  }
+
+  function prevStep() { setStep((s) => Math.max(s - 1, 0)) }
+
+  const handleSubmit = async () => {
     if (!profile) return
     setSubmitting(true)
-    setError(null)
+    setSubmitError(null)
+    const amt = Number(values.credit_amount.replace(/,/g, ''))
+    const finalType = values.credit_type === 'OTHER' ? (values.credit_type_other.trim() || 'OTHER') : values.credit_type
+    const today = new Date().toISOString().slice(0, 10)
 
-    const dnNumber = values.dn_number || generateDNNumber(profile.branch_code ?? 'XXX')
-    const { data: dn, error: dnErr } = await (supabase as any)
+    const { data: dn, error: dnErr } = await supabase
       .from('decision_notes')
       .insert({
         dn_number: dnNumber,
         title: values.title,
         debtor_name: values.debtor_name,
         debtor_cif: values.debtor_cif,
-        credit_amount: values.credit_amount as number,
-        credit_type: values.credit_type,
-        approval_date: values.approval_date,
-        approval_number: values.approval_number ?? null,
-        ao_id: profile.id,
-        status: 'DRAFT',
-        priority: values.priority,
-        notes: values.notes ?? null,
+        debtor_nik: values.debtor_nik,
+        debtor_phone: values.debtor_phone,
+        credit_amount: amt,
+        credit_type: finalType,
+        credit_application_date: values.credit_application_date,
+        approval_date: today,
+        rm_id: profile.id,
+        slik_status: values.slik_status as 'HIJAU' | 'KUNING' | 'MERAH',
+        pic_type: values.pic_type as 'RM' | 'ADK' | 'BOTH',
+        status: 'SUBMITTED',
+        priority: 'MEDIUM',
         branch_code: profile.branch_code ?? '',
       })
       .select()
       .single()
 
     if (dnErr || !dn) {
-      setError(dnErr?.message ?? 'Gagal membuat DN')
+      setSubmitError(dnErr?.message ?? 'Gagal membuat DN')
       setSubmitting(false)
       return
     }
 
-    // Insert conditions
-    if (values.conditions.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('dn_conditions').insert(
-        values.conditions.map((c, i) => ({
-          dn_id: dn.id,
-          condition_text: c.condition_text,
-          condition_type: c.condition_type,
-          due_date: c.due_date || null,
-          assigned_to: c.assigned_to || null,
-          sort_order: i,
-        }))
-      )
-    }
-
-    // Insert follow-up actions
-    if (values.followup_actions.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('followup_actions').insert(
-        values.followup_actions.map((f) => ({
-          dn_id: dn.id,
-          action_text: f.action_text,
-          due_date: f.due_date,
-          assigned_to: f.assigned_to || profile.id,
-          created_by: profile.id,
-        }))
-      )
+    // Upload file SLIK opsional ke storage lalu simpan path-nya
+    if (slikFile) {
+      const ext  = slikFile.name.split('.').pop() ?? 'pdf'
+      const path = `slik/${dn.id}/slik-${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('brimos-evidence').upload(path, slikFile, { upsert: true })
+      if (!upErr) {
+        await supabase.from('decision_notes').update({ slik_file_path: path }).eq('id', dn.id)
+      }
     }
 
     setSubmitting(false)
     router.push(`/decision-notes/${dn.id}`)
   }
 
-  const inputCls = 'w-full rounded-md border border-[#e8ecf4] px-3 py-2 text-[11px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#003087] focus:ring-2 focus:ring-[#003087]/10 transition-colors'
-  const errCls   = 'text-[9px] text-red-500 mt-1'
+  const inputCls    = 'w-full rounded-lg border border-[#cbd5e0] px-3 py-2.5 text-[13px] text-[#0f172a] bg-white placeholder:text-[#94a3b8] focus:outline-none focus:border-[#003087] focus:ring-2 focus:ring-[#003087]/15 transition-colors'
+  const readonlyCls = 'w-full rounded-lg border border-[#cbd5e0] px-3 py-2.5 text-[13px] text-[#0f172a] bg-[#f1f5f9] font-mono'
+  const labelCls    = 'block text-[11px] font-semibold text-[#1e293b] mb-1.5'
+  const errCls      = 'text-[10px] text-red-600 mt-1 font-medium'
+  const fieldErr    = (k: keyof FormValues) => errors[k] ? <p className={errCls}>{errors[k]}</p> : null
 
   return (
-    <div className="max-w-2xl mx-auto">
-      {/* Step wizard */}
-      <div className="flex items-start mb-6">
-        {STEPS.map((label, i) => {
-          const isDone    = i < step
-          const isCurrent = i === step
+    <div className="max-w-xl mx-auto">
+      {/* ── Progress steps ─────────────────────────── */}
+      <div className="flex items-center gap-0 mb-8">
+        {STEPS.map((s, i) => {
+          const Icon = s.icon
+          const done    = i < step
+          const current = i === step
           return (
-            <div key={i} className="flex items-start flex-1 min-w-0">
-              <div className="flex flex-col items-center shrink-0">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold border-2 ${
-                  isDone    ? 'bg-[#003087] border-[#003087] text-white'
-                  : isCurrent ? 'bg-[#f0b429] border-[#f0b429] text-[#002470]'
-                  : 'bg-white border-[#d1d5db] text-[#9ca3af]'
+            <div key={s.label} className="flex items-center flex-1 min-w-0">
+              <div className="flex flex-col items-center">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border-2 transition-all ${
+                  done    ? 'bg-[#22c55e] border-[#22c55e] text-white' :
+                  current ? 'bg-[#003087] border-[#003087] text-white' :
+                            'bg-white border-[#cbd5e0] text-[#94a3b8]'
                 }`}>
-                  {isDone ? '✓' : i + 1}
+                  {done ? <CheckCircle2 className="w-4 h-4" /> : <Icon className="w-3.5 h-3.5" />}
                 </div>
-                <span className={`text-[9px] mt-1 text-center hidden sm:block ${
-                  isCurrent ? 'text-[#003087] font-semibold' : 'text-[#9ca3af]'
-                }`}>{label}</span>
+                <span className={`text-[8.5px] mt-1 font-medium truncate max-w-[60px] text-center ${current ? 'text-[#003087]' : done ? 'text-[#22c55e]' : 'text-[#94a3b8]'}`}>
+                  {s.label}
+                </span>
               </div>
               {i < STEPS.length - 1 && (
-                <div className={`h-[2px] flex-1 mt-[13px] mx-0.5 ${isDone ? 'bg-[#003087]' : 'bg-[#e8ecf4]'}`} />
+                <div className={`h-0.5 flex-1 mx-1 rounded transition-all ${done ? 'bg-[#22c55e]' : 'bg-[#e2e8f0]'}`} />
               )}
             </div>
           )
         })}
       </div>
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-6">
-        {/* Step 0 */}
-        {step === 0 && (
-          <div className="space-y-3.5">
-            <div className="bg-[#003087] text-white rounded px-3 py-2 text-[10px] font-bold">Data Debitur</div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">Nama Debitur *</label>
-              <input {...form.register('debtor_name')} className={inputCls} placeholder="Nama lengkap debitur" />
-              {form.formState.errors.debtor_name && <p className={errCls}>{form.formState.errors.debtor_name.message}</p>}
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">CIF Debitur *</label>
-              <input {...form.register('debtor_cif')} className={inputCls} placeholder="Nomor CIF" />
-              {form.formState.errors.debtor_cif && <p className={errCls}>{form.formState.errors.debtor_cif.message}</p>}
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">Jenis Kredit *</label>
-              <select {...form.register('credit_type')} className={inputCls}>
-                <option value="">Pilih jenis kredit</option>
-                <option value="KUR">KUR</option>
-                <option value="KMK">KMK</option>
-                <option value="KI">Kredit Investasi</option>
-                <option value="KPR">KPR</option>
-                <option value="KPRK">KPRK</option>
-                <option value="BRIGUNA">BRIGUNA</option>
-                <option value="OTHER">Lainnya</option>
-              </select>
-              {form.formState.errors.credit_type && <p className={errCls}>{form.formState.errors.credit_type.message}</p>}
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">Jumlah Kredit (Rp) *</label>
-              <input {...form.register('credit_amount')} type="number" className={inputCls} placeholder="0" />
-              {form.formState.errors.credit_amount && <p className={errCls}>{form.formState.errors.credit_amount.message}</p>}
-            </div>
+      {/* ── Step 0: Data Debitur ─────────────────────── */}
+      {step === 0 && (
+        <div className="space-y-4">
+          <h2 className="text-[13px] font-bold text-[#002470] mb-1">Data Debitur</h2>
+          <div>
+            <label className={labelCls}>Nama Debitur <span className="text-red-500">*</span></label>
+            <input value={values.debtor_name} onChange={(e) => set('debtor_name', e.target.value)}
+              className={inputCls} placeholder="Nama lengkap debitur" />
+            {fieldErr('debtor_name')}
           </div>
-        )}
-
-        {/* Step 1 */}
-        {step === 1 && (
-          <div className="space-y-3.5">
-            <div className="bg-[#003087] text-white rounded px-3 py-2 text-[10px] font-bold">Info Persetujuan</div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">Nomor DN *</label>
-              <input {...form.register('dn_number')} className={inputCls} placeholder="DN/KODE/YYYYMM/0001" />
-              {form.formState.errors.dn_number && <p className={errCls}>{form.formState.errors.dn_number.message}</p>}
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">Judul DN *</label>
-              <input {...form.register('title')} className={inputCls} placeholder="Judul Decision Note" />
-              {form.formState.errors.title && <p className={errCls}>{form.formState.errors.title.message}</p>}
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">Tanggal Persetujuan *</label>
-              <input {...form.register('approval_date')} type="date" className={inputCls} />
-              {form.formState.errors.approval_date && <p className={errCls}>{form.formState.errors.approval_date.message}</p>}
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">Nomor Surat Persetujuan</label>
-              <input {...form.register('approval_number')} className={inputCls} placeholder="Opsional" />
-            </div>
+          <div>
+            <label className={labelCls}>NIK KTP <span className="text-red-500">*</span></label>
+            <input value={values.debtor_nik}
+              onChange={(e) => set('debtor_nik', e.target.value.replace(/\D/g, '').slice(0, 16))}
+              className={inputCls} placeholder="16 digit NIK KTP" inputMode="numeric" maxLength={16} />
+            {fieldErr('debtor_nik')}
           </div>
-        )}
-
-        {/* Step 2 – Conditions */}
-        {step === 2 && (
-          <div className="space-y-3.5">
-            <div className="flex items-center gap-2">
-              <div className="bg-[#003087] text-white rounded px-3 py-2 text-[10px] font-bold flex-1">Kondisi Pasca Persetujuan</div>
-              <button type="button" onClick={() => appendCond({ condition_text: '', condition_type: 'STANDARD', due_date: '', assigned_to: '' })}
-                className="flex items-center gap-1 text-[10px] text-[#003087] font-semibold hover:underline whitespace-nowrap">
-                <Plus className="w-3 h-3" /> Tambah
-              </button>
-            </div>
-            {condFields.map((field, i) => (
-              <div key={field.id} className="border border-[#e8ecf4] rounded-lg p-3 space-y-2.5 bg-[#fafbfc]">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-semibold text-gray-500">Kondisi {i + 1}</span>
-                  {i > 0 && (
-                    <button type="button" onClick={() => removeCond(i)} className="text-red-400 hover:text-red-600">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-                <textarea {...form.register(`conditions.${i}.condition_text`)} rows={2} className={inputCls} placeholder="Isi kondisi..." />
-                {form.formState.errors.conditions?.[i]?.condition_text && (
-                  <p className={errCls}>{form.formState.errors.conditions[i]?.condition_text?.message}</p>
-                )}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-gray-500">Jenis</label>
-                    <select {...form.register(`conditions.${i}.condition_type`)} className={inputCls}>
-                      <option value="STANDARD">Standard</option>
-                      <option value="PRECEDENT">Preseden</option>
-                      <option value="SUBSEQUENT">Subsequent</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500">Batas Tanggal *</label>
-                    <input {...form.register(`conditions.${i}.due_date`)} type="date" className={inputCls} />
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div>
+            <label className={labelCls}>No. HP/WhatsApp <span className="text-red-500">*</span></label>
+            <input value={values.debtor_phone} onChange={(e) => set('debtor_phone', e.target.value)}
+              className={inputCls} placeholder="Contoh: 08123456789" inputMode="tel" type="tel" />
+            {fieldErr('debtor_phone')}
           </div>
-        )}
+          <div>
+            <label className={labelCls}>CIF Debitur <span className="text-red-500">*</span></label>
+            <input value={values.debtor_cif} onChange={(e) => set('debtor_cif', e.target.value)}
+              className={inputCls} placeholder="Nomor CIF" />
+            {fieldErr('debtor_cif')}
+          </div>
+        </div>
+      )}
 
-        {/* Step 3 – Follow-up */}
-        {step === 3 && (
-          <div className="space-y-3.5">
-            <div className="flex items-center justify-between">
-              <div className="bg-[#003087] text-white rounded px-3 py-2 text-[10px] font-bold flex-1">Tindak Lanjut</div>
-              <button type="button" onClick={() => appendFU({ action_text: '', due_date: '', assigned_to: '' })}
-                className="flex items-center gap-1 text-sm text-[#002D62] hover:underline">
-                <Plus className="w-4 h-4" /> Tambah
-              </button>
+      {/* ── Step 1: Info Kredit ──────────────────────── */}
+      {step === 1 && (
+        <div className="space-y-4">
+          <h2 className="text-[13px] font-bold text-[#002470] mb-1">Informasi Kredit</h2>
+          <div>
+            <label className={labelCls}>Jenis Kredit <span className="text-red-500">*</span></label>
+            <select value={values.credit_type} onChange={(e) => set('credit_type', e.target.value)} className={inputCls}>
+              <option value="">Pilih jenis kredit</option>
+              <option value="KUR">KUR</option>
+              <option value="KMK">KMK</option>
+              <option value="KI">{lang === 'en' ? 'Investment Credit' : 'Kredit Investasi'}</option>
+              <option value="KPR">KPR</option>
+              <option value="BRIGUNA">BRIGUNA</option>
+              <option value="OTHER">{lang === 'en' ? 'Other' : 'Lainnya'}</option>
+            </select>
+            {fieldErr('credit_type')}
+          </div>
+          {values.credit_type === 'OTHER' && (
+            <div>
+              <label className={labelCls}>Jenis Kredit Lainnya <span className="text-red-500">*</span></label>
+              <input value={values.credit_type_other} onChange={(e) => set('credit_type_other', e.target.value)}
+                className={inputCls} placeholder="Tuliskan jenis kredit" />
+              {fieldErr('credit_type_other')}
             </div>
-            {fuFields.length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-4">Tidak ada tindak lanjut (opsional)</p>
+          )}
+          <div>
+            <label className={labelCls}>Plafond Kredit (Rp) <span className="text-red-500">*</span></label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-[#64748b] font-medium pointer-events-none">Rp</span>
+              <input type="text" inputMode="numeric"
+                value={values.credit_amount}
+                onChange={(e) => set('credit_amount', formatThousands(e.target.value))}
+                className={inputCls + ' pl-9'} placeholder="0" />
+            </div>
+            {values.credit_amount && (
+              <p className="text-[9px] text-[#64748b] mt-1">= {formatCurrency(Number(values.credit_amount.replace(/,/g, '')))}</p>
             )}
-            {fuFields.map((field, i) => (
-              <div key={field.id} className="border rounded-xl p-4 space-y-3 bg-gray-50">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-semibold text-gray-500">Tindak Lanjut {i + 1}</span>
-                  <button type="button" onClick={() => removeFU(i)} className="text-red-400 hover:text-red-600">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-                <textarea {...form.register(`followup_actions.${i}.action_text`)} rows={2} className={inputCls} placeholder="Isi tindak lanjut..." />
-                <div>
-                  <label className="text-xs text-gray-500">Batas Tanggal *</label>
-                  <input {...form.register(`followup_actions.${i}.due_date`)} type="date" className={inputCls} />
-                </div>
+            {fieldErr('credit_amount')}
+          </div>
+          <div>
+            <label className={labelCls}>Tanggal Pengajuan Kredit <span className="text-red-500">*</span></label>
+            <input type="date" value={values.credit_application_date}
+              onChange={(e) => set('credit_application_date', e.target.value)} className={inputCls} />
+            {fieldErr('credit_application_date')}
+          </div>
+          <div>
+            <label className={labelCls}>Status SLIK <span className="text-red-500">*</span></label>
+            <p className="text-[9px] text-[#64748b] mb-1.5">Sistem Layanan Informasi Keuangan — pilih sesuai hasil pengecekan.</p>
+            <select value={values.slik_status} onChange={(e) => set('slik_status', e.target.value)} className={inputCls}>
+              <option value="">Pilih status SLIK</option>
+              <option value="HIJAU">🟢 Hijau — SLIK bagus (lancar)</option>
+              <option value="KUNING">🟡 Kuning — Hati-hati (pernah menunggak)</option>
+              <option value="MERAH">🔴 Merah — SLIK tidak bagus (bermasalah)</option>
+            </select>
+            {values.slik_status && (
+              <div className="mt-2 flex items-center gap-2">
+                <span
+                  className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full"
+                  style={{
+                    background: values.slik_status === 'HIJAU' ? '#e8f5e9' : values.slik_status === 'KUNING' ? '#fff8e1' : '#ffebee',
+                    color:      values.slik_status === 'HIJAU' ? '#16a34a' : values.slik_status === 'KUNING' ? '#b8890a' : '#CC0000',
+                  }}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{ background: values.slik_status === 'HIJAU' ? '#16a34a' : values.slik_status === 'KUNING' ? '#f0b429' : '#CC0000' }}
+                  />
+                  SLIK {values.slik_status === 'HIJAU' ? 'Hijau' : values.slik_status === 'KUNING' ? 'Kuning' : 'Merah'}
+                </span>
+              </div>
+            )}
+            {fieldErr('slik_status')}
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 2: Dokumen ──────────────────────────── */}
+      {step === 2 && (
+        <div className="space-y-4">
+          <h2 className="text-[13px] font-bold text-[#002470] mb-1">Info Dokumen</h2>
+          <div>
+            <label className={labelCls}>Nomor DN (otomatis)</label>
+            <input readOnly value={dnNumber} className={readonlyCls} />
+            <p className="text-[9px] text-[#64748b] mt-1">Dibuat otomatis dari kode cabang &amp; waktu.</p>
+          </div>
+          <div>
+            <label className={labelCls}>Judul Catatan Pemutus <span className="text-red-500">*</span></label>
+            <input value={values.title} onChange={(e) => set('title', e.target.value)}
+              className={inputCls} placeholder="Judul ringkas untuk DN ini" />
+            {fieldErr('title')}
+          </div>
+          <div>
+            <label className={labelCls}>PIC Pelaksana Tindak Lanjut <span className="text-red-500">*</span></label>
+            <p className="text-[9px] text-[#64748b] mb-1.5">Penanggung jawab pemenuhan tindak lanjut setelah diputus.</p>
+            <select value={values.pic_type} onChange={(e) => set('pic_type', e.target.value)} className={inputCls}>
+              <option value="RM">RM (Relationship Manager)</option>
+              <option value="ADK">ADK - POK</option>
+              <option value="BOTH">RM &amp; ADK - POK (keduanya)</option>
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Upload Dokumen SLIK (opsional)</label>
+            <p className="text-[9px] text-[#64748b] mb-1.5">Lampirkan hasil pengecekan SLIK bila tersedia (PDF/gambar).</p>
+            <input
+              type="file"
+              accept=".pdf,image/*"
+              onChange={(e) => setSlikFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-[11px] text-[#475569] file:mr-3 file:rounded-lg file:border-0 file:bg-[#003087] file:px-3 file:py-2 file:text-[11px] file:font-semibold file:text-white hover:file:bg-[#002470] cursor-pointer"
+            />
+            {slikFile && <p className="text-[9px] text-[#16a34a] mt-1 font-medium">✓ {slikFile.name}</p>}
+          </div>
+          <div className="rounded-lg bg-[#fffbe0] border border-[#f0b429]/40 px-3 py-2.5">
+            <p className="text-[10.5px] text-[#7a5e10]">
+              💡 {lang === 'en'
+                ? 'After submitting, this DN will be sent to the CBM / Manager (Decider) for a decision.'
+                : 'Setelah dikirim, DN ini masuk ke antrian CBM / Manager (Pemutus) untuk diputuskan.'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 3: Review ───────────────────────────── */}
+      {step === 3 && (
+        <div className="space-y-4">
+          <h2 className="text-[13px] font-bold text-[#002470] mb-1">Review &amp; Submit</h2>
+          <div className="bg-[#f8fafc] rounded-[10px] border border-[#e8ecf4] divide-y divide-[#e8ecf4] overflow-hidden">
+            {([
+              ['Nama Debitur',         values.debtor_name],
+              ['NIK KTP',              values.debtor_nik],
+              ['No. HP/WA',            values.debtor_phone],
+              ['CIF',                  values.debtor_cif],
+              ['Jenis Kredit',         values.credit_type === 'OTHER' ? values.credit_type_other : values.credit_type],
+              ['Plafond Kredit',       formatCurrency(Number(values.credit_amount.replace(/,/g, '')))],
+              ['Status SLIK',          values.slik_status === 'HIJAU' ? '🟢 Hijau' : values.slik_status === 'KUNING' ? '🟡 Kuning' : values.slik_status === 'MERAH' ? '🔴 Merah' : ''],
+              ['Tgl. Pengajuan',       values.credit_application_date],
+              ['PIC Pelaksana',        values.pic_type === 'BOTH' ? 'RM & ADK - POK' : values.pic_type === 'ADK' ? 'ADK - POK' : 'RM'],
+              ['Dokumen SLIK',         slikFile ? slikFile.name : 'Tidak dilampirkan'],
+              ['Nomor DN',             dnNumber],
+              ['Judul DN',             values.title],
+            ] as [string, string][]).map(([label, val]) => (
+              <div key={label} className="flex items-start px-3.5 py-2.5 gap-3">
+                <span className="text-[9.5px] text-[#9ca3af] w-32 shrink-0">{label}</span>
+                <span className="text-[10px] font-semibold text-[#002470] break-all">{val || '—'}</span>
               </div>
             ))}
           </div>
-        )}
-
-        {/* Step 4 – Review */}
-        {step === 4 && (
-          <div className="space-y-3.5">
-            <div className="bg-[#003087] text-white rounded px-3 py-2 text-[10px] font-bold">Review &amp; Submit</div>
-            <div className="bg-[#fafbfc] rounded-lg border border-[#e8ecf4] p-4 space-y-2 text-[11px]">
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                <span className="text-gray-500">Debitur</span><span className="font-medium">{form.watch('debtor_name')}</span>
-                <span className="text-gray-500">CIF</span><span className="font-medium">{form.watch('debtor_cif')}</span>
-                <span className="text-gray-500">Jenis Kredit</span><span className="font-medium">{form.watch('credit_type')}</span>
-                <span className="text-gray-500">Nomor DN</span><span className="font-medium">{form.watch('dn_number')}</span>
-                <span className="text-gray-500">Kondisi</span><span className="font-medium">{form.watch('conditions').length} kondisi</span>
-              </div>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">Prioritas</label>
-              <select {...form.register('priority')} className={inputCls}>
-                <option value="LOW">Rendah</option>
-                <option value="MEDIUM">Sedang</option>
-                <option value="HIGH">Tinggi</option>
-                <option value="CRITICAL">Kritis</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">Catatan Tambahan</label>
-              <textarea {...form.register('notes')} rows={3} className={inputCls} placeholder="Opsional..." />
-            </div>
-            {error && <p className="text-sm text-red-500 bg-red-50 rounded-lg px-4 py-2">{error}</p>}
-          </div>
-        )}
-
-        {/* Navigation Buttons */}
-        <div className="flex items-center justify-between pt-4">
-          <button type="button" onClick={() => setStep((s) => Math.max(s - 1, 0))}
-            disabled={step === 0}
-            className="flex items-center gap-1 px-4 py-2 text-[11px] font-medium text-[#002470] bg-white border border-[#e8ecf4] rounded-lg hover:bg-[#f0f4f8] disabled:opacity-40">
-            <ChevronLeft className="w-3.5 h-3.5" /> Sebelumnya
-          </button>
-          {step < STEPS.length - 1 ? (
-            <button type="button" onClick={goNext}
-              className="flex items-center gap-1 px-5 py-2 text-[11px] font-semibold text-white bg-[#003087] rounded-lg hover:bg-[#002470] transition-colors">
-              Berikutnya <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          ) : (
-            <button type="submit" disabled={submitting}
-              className="flex items-center gap-2 px-5 py-2 text-[11px] font-semibold text-white bg-[#003087] rounded-lg hover:bg-[#002470] disabled:opacity-60 transition-colors">
-              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              Simpan DN
-            </button>
+          {submitError && (
+            <p className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-2">{submitError}</p>
           )}
         </div>
-      </form>
+      )}
+
+      {/* ── Navigation ───────────────────────────────── */}
+      <div className="flex items-center justify-between mt-8 pt-4 border-t border-[#e8ecf4]">
+        <button
+          type="button"
+          onClick={prevStep}
+          disabled={step === 0}
+          className="flex items-center gap-1.5 px-4 py-2.5 text-[11px] font-semibold text-[#718096] bg-[#f0f4f8] border border-[#e8ecf4] rounded-lg hover:bg-[#e8ecf4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          <ChevronLeft className="w-3.5 h-3.5" /> Kembali
+        </button>
+        {step < 3 ? (
+          <button
+            type="button"
+            onClick={nextStep}
+            className="flex items-center gap-1.5 px-5 py-2.5 text-[11px] font-semibold text-white bg-[#003087] rounded-lg hover:bg-[#002470] transition-colors"
+          >
+            Lanjut <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="flex items-center gap-1.5 px-5 py-2.5 text-[11px] font-semibold text-white bg-[#003087] rounded-lg hover:bg-[#002470] disabled:opacity-60 transition-colors"
+          >
+            {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Kirim ke Pemutus
+          </button>
+        )}
+      </div>
     </div>
   )
 }

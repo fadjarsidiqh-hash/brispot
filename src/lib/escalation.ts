@@ -11,16 +11,16 @@ export async function runEscalationCheck(): Promise<void> {
   const supabase = createClient()
   const now = new Date()
 
-  // Get all DNs that are SUBMITTED or VERIFIED_DK and past due_date
+  // Get all DNs that are SUBMITTED or DECIDED_BOH and past due_date
   const { data: overdueDNs, error } = await supabase
     .from('decision_notes')
     .select(`
       id, dn_number, debtor_name, due_date, escalation_date, status,
-      ao:ao_id(full_name, email, phone),
-      dk:dk_id(full_name, email, phone),
+      rm:rm_id(full_name, email, phone),
+      adk:adk_id(full_name, email, phone),
       boh:boh_id(full_name, email, phone)
     `)
-    .in('status', ['SUBMITTED', 'VERIFIED_DK'])
+    .in('status', ['SUBMITTED', 'DECIDED_BOH'])
     .not('due_date', 'is', null)
     .lt('due_date', now.toISOString().split('T')[0])
 
@@ -61,16 +61,92 @@ export async function runEscalationCheck(): Promise<void> {
         if (boh.phone) {
           await sendWhatsApp({
             target: boh.phone,
-            message: `[BRIMOS ESKALASI] DN ${dn.dn_number} - ${dn.debtor_name} dieskalasi ke BOH karena melewati batas waktu.`,
+            message: `[BRISPOT ESKALASI] DN ${dn.dn_number} - ${dn.debtor_name} dieskalasi ke BOH karena melewati batas waktu.`,
           }).catch(console.error)
         }
       }
     } else {
-      // Send overdue reminder to AO
-      const ao = dn.ao as { full_name: string; email: string; phone?: string } | null
-      if (ao?.email && daysOverdue > 0) {
+      // Send overdue reminder to RM
+      const rm = dn.rm as { full_name: string; email: string; phone?: string } | null
+      if (rm?.email && daysOverdue > 0) {
         const emailContent = buildDNOverdueEmail(dn.dn_number, dn.debtor_name, daysOverdue)
-        await sendEmail({ to: ao.email, ...emailContent }).catch(console.error)
+        await sendEmail({ to: rm.email, ...emailContent }).catch(console.error)
+      }
+    }
+  }
+}
+
+/**
+ * Pengingat SLA tindak lanjut (dn_conditions) otomatis: H-7 / H-3 / H-1
+ * dan menandai tindak lanjut yang lewat jatuh tempo sebagai OVERDUE.
+ * Dipanggil dari cron route.
+ */
+export async function runConditionReminders(): Promise<void> {
+  const supabase = createClient()
+  const today = new Date()
+  const ymd = (d: Date) => d.toISOString().split('T')[0]
+  const addDays = (n: number) => {
+    const d = new Date(today)
+    d.setDate(d.getDate() + n)
+    return ymd(d)
+  }
+  const hMap: Record<string, number> = { [addDays(7)]: 7, [addDays(3)]: 3, [addDays(1)]: 1 }
+
+  // Tandai tindak lanjut yang sudah lewat jatuh tempo sebagai OVERDUE
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any)
+    .from('dn_conditions')
+    .update({ status: 'OVERDUE' })
+    .lt('due_date', ymd(today))
+    .in('status', ['PENDING', 'IN_PROGRESS'])
+
+  // Ambil tindak lanjut yang jatuh tempo di H-7 / H-3 / H-1 dan masih terbuka
+  const { data, error } = await supabase
+    .from('dn_conditions')
+    .select(`
+      id, condition_text, due_date, requirement_type, status,
+      dn:dn_id(
+        dn_number, debtor_name, pic_type,
+        rm:rm_id(full_name, email, phone),
+        adk:adk_id(full_name, email, phone)
+      )
+    `)
+    .in('status', ['PENDING', 'IN_PROGRESS'])
+    .in('due_date', Object.keys(hMap))
+
+  if (error || !data) return
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const c of (data as any[])) {
+    const dn = c.dn
+    if (!dn || !c.due_date) continue
+    const h = hMap[c.due_date]
+    if (!h) continue
+
+    const recipients: { full_name?: string; email?: string; phone?: string }[] = []
+    if ((dn.pic_type === 'RM' || dn.pic_type === 'BOTH') && dn.rm) recipients.push(dn.rm)
+    if ((dn.pic_type === 'ADK' || dn.pic_type === 'BOTH') && dn.adk) recipients.push(dn.adk)
+
+    const subject = `[BRISPOT] Pengingat Tindak Lanjut H-${h} — DN ${dn.dn_number}`
+    const html = `
+      <h2>Pengingat Tindak Lanjut (H-${h})</h2>
+      <p>Tindak lanjut berikut akan jatuh tempo pada <b>${c.due_date}</b>:</p>
+      <ul>
+        <li><b>DN:</b> ${dn.dn_number} — ${dn.debtor_name}</li>
+        <li><b>Tindak lanjut:</b> ${c.condition_text}</li>
+        <li><b>Jenis pemenuhan:</b> ${c.requirement_type === 'EVIDENCE' ? 'Wajib upload bukti' : 'Checklist konfirmasi'}</li>
+      </ul>
+      <p>Mohon segera diselesaikan sebelum batas waktu.</p>
+    `
+    for (const r of recipients) {
+      if (r?.email) {
+        await sendEmail({ to: r.email, subject, html }).catch(console.error)
+      }
+      if (r?.phone) {
+        await sendWhatsApp({
+          target: r.phone,
+          message: `[BRISPOT] Pengingat (H-${h}): tindak lanjut "${c.condition_text}" pada DN ${dn.dn_number} - ${dn.debtor_name} jatuh tempo ${c.due_date}.`,
+        }).catch(console.error)
       }
     }
   }

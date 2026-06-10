@@ -1,4 +1,4 @@
-export type { Database, UserRole, DNStatus, ConditionStatus, PriorityLevel, NotificationChannel } from './database.types'
+export type { Database, UserRole, DNStatus, ConditionStatus, PriorityLevel, NotificationChannel, Confidentiality, SlikStatus } from './database.types'
 import type { Database } from './database.types'
 
 // Table row types
@@ -21,9 +21,10 @@ export type InsertFollowup = Database['brimos']['Tables']['followup_actions']['I
 
 // Extended types (with joins)
 export type DecisionNoteWithRelations = DecisionNote & {
-  ao?: Pick<Profile, 'id' | 'full_name' | 'email'>
-  dk?: Pick<Profile, 'id' | 'full_name' | 'email'>
+  rm?: Pick<Profile, 'id' | 'full_name' | 'email'>
+  adk?: Pick<Profile, 'id' | 'full_name' | 'email'>
   boh?: Pick<Profile, 'id' | 'full_name' | 'email'>
+  manager?: Pick<Profile, 'id' | 'full_name' | 'email'>
   conditions?: DNCondition[]
   evidences?: DNEvidence[]
   followup_actions?: FollowupAction[]

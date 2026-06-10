@@ -10,10 +10,10 @@ const font = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'BRIMOS - BRI Monitoring & Oversight System',
-  description: 'Sistem monitoring Decision Notes PT Bank BRI (Persero) Tbk',
+  title: 'BRISPOT - BRI Monitoring & Oversight System',
+  description: 'Sistem monitoring Catatan Pemutus (DN) PT Bank BRI (Persero) Tbk',
   manifest: '/manifest.json',
-  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'BRIMOS' },
+  appleWebApp: { statusBarStyle: 'default', title: 'BRISPOT' },
   icons: { apple: '/icons/icon-192.png' },
 }
 
