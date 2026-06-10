@@ -8,7 +8,6 @@ import { CheckCircle2, XCircle, Clock, FileText, Loader2, AlertCircle } from 'lu
 import { useState } from 'react'
 import type { DecisionNote } from '@/types'
 import { useI18n } from '@/contexts/I18nContext'
-import { DocReviewChecklist } from '@/components/forms/DocReviewChecklist'
 
 const STATUS_PILL: Record<string, string> = {
   SUBMITTED:       'bg-[#e8f0fe] text-[#003087]',
@@ -25,7 +24,7 @@ const SLIK_BADGE: Record<string, { bg: string; color: string; dot: string; label
 
 export default function VerifikasiPage() {
   const { profile } = useAuth()
-  const { list, loading, error, fetchList, decideManager, decideBOH, verifyADK, rejectDN, requestRevision } = useDN()
+  const { list, loading, error, fetchList, decideManager, decideBOH, verifyADK, completeDN, rejectDN, requestRevision } = useDN()
   const { t } = useI18n()
   const [selected, setSelected] = useState<DecisionNote | null>(null)
   const [rejectNotes, setRejectNotes] = useState('')
@@ -38,8 +37,7 @@ export default function VerifikasiPage() {
     if (role === 'BOH') return dn.status === 'DECIDED_MANAGER' && requiresBOH(dn)
     if (role === 'ADK') return (
       dn.status === 'DECIDED_BOH' ||
-      (dn.status === 'DECIDED_MANAGER' && !requiresBOH(dn)) ||
-      dn.status === 'VERIFIED_ADK'  // ADK dapat menyelesaikan (COMPLETED) setelah verifikasi
+      (dn.status === 'DECIDED_MANAGER' && !requiresBOH(dn))
     )
     return false
   })
@@ -49,11 +47,6 @@ export default function VerifikasiPage() {
     ((role === 'MANAGER' || role === 'ADMIN') && dn.status === 'SUBMITTED') ||
     (role === 'BOH' && dn.status === 'DECIDED_MANAGER')
 
-  const isCompleterFor = (dn: DecisionNote) =>
-    (role === 'ADK' || role === 'ADMIN') && dn.status === 'VERIFIED_ADK'
-
-  const { completeDN } = useDN()
-
   const handleDecide = async (dn: DecisionNote) => {
     if (!profile) return
     setActing(true)
@@ -62,10 +55,10 @@ export default function VerifikasiPage() {
         await decideManager(dn.id, selectedConfid, profile.id, rejectNotes.trim() || undefined)
       } else if (role === 'BOH' && dn.status === 'DECIDED_MANAGER') {
         await decideBOH(dn.id, selectedConfid, profile.id, rejectNotes.trim() || undefined)
-      } else if (dn.status === 'VERIFIED_ADK') {
-        await completeDN(dn.id)
       } else {
-        await verifyADK(dn.id, profile.id, rejectNotes.trim() || undefined)
+        // ADK: verifikasi lalu langsung selesaikan (satu langkah)
+        await verifyADK(dn.id, profile.id)
+        await completeDN(dn.id)
       }
       await fetchList()
       setSelected(null)
@@ -257,15 +250,6 @@ export default function VerifikasiPage() {
                   </div>
                 )}
 
-                {/* ADK: full checklist with integrated opini field */}
-                {role === 'ADK' && (selected.status === 'DECIDED_BOH' || selected.status === 'DECIDED_MANAGER') && (
-                  <DocReviewChecklist
-                    dn={selected}
-                    opini={rejectNotes}
-                    onOpiniChange={setRejectNotes}
-                  />
-                )}
-
                 {/* Pemutus (Manager/BOH): plain notes textarea */}
                 {isDeciderFor(selected) && (
                   <div>
@@ -291,11 +275,9 @@ export default function VerifikasiPage() {
                     disabled={acting}
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    {isCompleterFor(selected)
-                      ? 'Selesaikan (COMPLETED)'
-                      : isDeciderFor(selected)
-                        ? (requiresBOH(selected) ? 'Putuskan → Teruskan ke BOH' : 'Setujui / Putuskan (CBM)')
-                        : t.verif.approveADK}
+                    {isDeciderFor(selected)
+                      ? (requiresBOH(selected) ? 'Putuskan → Teruskan ke BOH' : 'Setujui / Putuskan (CBM)')
+                      : t.verif.approveADK}
                   </button>
                   <button
                     onClick={() => handleRequestRevision(selected)}
