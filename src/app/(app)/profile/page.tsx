@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
-import { User, Lock, Eye, EyeOff, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react'
+import { User, Lock, Eye, EyeOff, CheckCircle2, XCircle, ShieldCheck, Smartphone } from 'lucide-react'
 
 const ROLE_LABEL: Record<string, string> = {
   RM: 'Relationship Manager',
@@ -34,6 +34,18 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
+  // Phone / WA number state
+  const [phone, setPhone] = useState<string>(profile?.phone ?? '')
+  const [phoneLoaded, setPhoneLoaded] = useState(false)
+  const [savingPhone, setSavingPhone] = useState(false)
+  const [phoneMsg, setPhoneMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  // Sync phone from profile when loaded
+  if (profile && !phoneLoaded) {
+    setPhone(profile.phone ?? '')
+    setPhoneLoaded(true)
+  }
+
   const passed = checks.filter((c) => c.test(newPw)).length
   const allPassed = passed === checks.length
   const matches = newPw.length > 0 && newPw === confirmPw
@@ -45,6 +57,34 @@ export default function ProfilePage() {
     .slice(0, 2)
     .join('')
     .toUpperCase()
+
+  async function handleSavePhone(e: React.FormEvent) {
+    e.preventDefault()
+    if (!profile?.id) return
+    // Normalize: remove non-digit, ensure starts with 62
+    const digits = phone.replace(/\D/g, '')
+    const normalized = digits.startsWith('0') ? '62' + digits.slice(1) : digits.startsWith('62') ? digits : '62' + digits
+    if (normalized.length < 10 || normalized.length > 15) {
+      setPhoneMsg({ type: 'error', text: 'Nomor tidak valid. Contoh: 08123456789 atau 628123456789' })
+      return
+    }
+    setSavingPhone(true)
+    setPhoneMsg(null)
+    try {
+      const { error } = await supabase
+        .schema('brimos')
+        .from('profiles')
+        .update({ phone: normalized })
+        .eq('id', profile.id)
+      if (error) throw error
+      setPhone(normalized)
+      setPhoneMsg({ type: 'success', text: `Nomor WA disimpan: ${normalized}` })
+    } catch (err: unknown) {
+      setPhoneMsg({ type: 'error', text: 'Gagal menyimpan: ' + (err instanceof Error ? err.message : String(err)) })
+    } finally {
+      setSavingPhone(false)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -106,6 +146,48 @@ export default function ProfilePage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <InfoRow icon={<User className="w-3.5 h-3.5" />} label="Email" value={profile?.email ?? '—'} />
         <InfoRow icon={<ShieldCheck className="w-3.5 h-3.5" />} label="Peran" value={ROLE_LABEL[profile?.role ?? ''] ?? profile?.role ?? '—'} />
+      </div>
+
+      {/* WhatsApp / Phone Number */}
+      <div className="bg-white rounded-2xl border border-[#e8ecf4] overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-[#e8ecf4] flex items-center gap-2">
+          <Smartphone className="w-4 h-4 text-[#16a34a]" />
+          <h2 className="text-[13px] font-bold text-[#002470]">Nomor WhatsApp</h2>
+          <span className="ml-auto text-[9px] bg-[#dcfce7] text-[#16a34a] px-2 py-0.5 rounded-full font-semibold">Untuk notif WA</span>
+        </div>
+        <form onSubmit={handleSavePhone} className="p-5 space-y-3">
+          <p className="text-[11px] text-[#718096]">
+            Masukkan nomor HP/WA Anda agar sistem dapat mengirim notifikasi WhatsApp setiap ada update DN (keputusan, penolakan, dokumen kurang, dsb).
+          </p>
+          {phoneMsg && (
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-medium ${
+              phoneMsg.type === 'success' ? 'bg-[#ecfdf3] text-[#16a34a] border border-[#abefc6]' : 'bg-[#fef3f2] text-[#CC0000] border border-[#fecdca]'
+            }`}>
+              {phoneMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+              {phoneMsg.text}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Contoh: 08123456789 atau 628123456789"
+              className="flex-1 px-3 py-2 rounded-lg border border-[#e8ecf4] text-[12px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#16a34a] focus:ring-2 focus:ring-[#16a34a]/10"
+            />
+            <button
+              type="submit"
+              disabled={savingPhone || !phone.trim()}
+              className="flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold text-white bg-[#16a34a] rounded-lg hover:bg-[#15803d] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              {savingPhone ? 'Menyimpan...' : 'Simpan'}
+            </button>
+          </div>
+          <p className="text-[10px] text-[#9ca3af]">
+            Format otomatis dikonversi ke 62xxx (kode negara Indonesia). Nomor tidak akan ditampilkan ke pengguna lain.
+          </p>
+        </form>
       </div>
 
       {/* Change password */}
