@@ -1,7 +1,7 @@
 'use client'
 
 import { useAuth } from '@/hooks/useAuth'
-import { useDN } from '@/hooks/useDN'
+import { useDN, requiresBOH } from '@/hooks/useDN'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useI18n } from '@/contexts/I18nContext'
 import Link from 'next/link'
@@ -70,21 +70,22 @@ export default function DashboardPage() {
 
   // BOH-specific stats
   const isBOH = profile?.role === 'BOH' || profile?.role === 'ADMIN'
-  const bohPending  = dns.filter((d) => d.status === 'SUBMITTED').length
+  const bohPending  = dns.filter((d) => d.status === 'DECIDED_MANAGER' && requiresBOH(d)).length
   const bohApproved = dns.filter((d) => d.boh_id === profile?.id && ['DECIDED_BOH','VERIFIED_ADK','COMPLETED'].includes(d.status)).length
   const bohRejected = dns.filter((d) => d.boh_id === profile?.id && d.status === 'REJECTED').length
   const recent = dns.slice(0, 6)
   const today  = new Date().toLocaleDateString(t.common.noData === 'No data yet' ? 'en-GB' : 'id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   const DN_PILL_LABEL: Record<string, string> = {
-    ESCALATED:    t.dashboard.statusEscalated,
-    COMPLETED:    t.dashboard.statusCompleted,
-    SUBMITTED:    t.dashboard.statusSubmitted,
-    DECIDED_BOH:  t.dashboard.statusDecidedBOH,
-    VERIFIED_ADK: t.dashboard.statusVerifiedADK,
-    DRAFT:        t.dashboard.statusDraft,
-    REJECTED:     t.dashboard.statusRejected,
-    NEEDS_REVISION: t.dashboard.statusRevision,
+    ESCALATED:       t.dashboard.statusEscalated,
+    COMPLETED:       t.dashboard.statusCompleted,
+    SUBMITTED:       t.dashboard.statusSubmitted,
+    DECIDED_MANAGER: 'Putus CBM',
+    DECIDED_BOH:     t.dashboard.statusDecidedBOH,
+    VERIFIED_ADK:    t.dashboard.statusVerifiedADK,
+    DRAFT:           t.dashboard.statusDraft,
+    REJECTED:        t.dashboard.statusRejected,
+    NEEDS_REVISION:  t.dashboard.statusRevision,
   }
 
   return (

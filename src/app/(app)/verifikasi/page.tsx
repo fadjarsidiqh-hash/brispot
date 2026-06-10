@@ -250,7 +250,7 @@ export default function VerifikasiPage() {
                   </div>
                 )}
 
-                {/* Pemutus (Manager/BOH): plain notes textarea */}
+                {/* Catatan — for Manager/BOH (decision notes), for ADK (rejection reason only) */}
                 {isDeciderFor(selected) && (
                   <div>
                     <label className="block text-[9px] font-bold text-[#002470] mb-1">
@@ -263,6 +263,21 @@ export default function VerifikasiPage() {
                       rows={3}
                       placeholder="Catatan putusan, syarat pencairan, atau alasan penolakan..."
                       className="w-full border border-[#e8ecf4] rounded-lg px-3 py-2 text-[11px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#003087] focus:ring-2 focus:ring-[#003087]/10 resize-none transition-colors"
+                    />
+                  </div>
+                )}
+                {role === 'ADK' && (
+                  <div>
+                    <label className="block text-[9px] font-bold text-[#002470] mb-1">
+                      Alasan Penolakan / Revisi
+                      <span className="text-[#9ca3af] font-normal ml-1">(wajib diisi jika menolak atau minta revisi)</span>
+                    </label>
+                    <textarea
+                      value={rejectNotes}
+                      onChange={(e) => setRejectNotes(e.target.value)}
+                      rows={2}
+                      placeholder="Tulis alasan penolakan atau permintaan revisi dokumen..."
+                      className="w-full border border-[#e8ecf4] rounded-lg px-3 py-2 text-[11px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#CC0000] focus:ring-2 focus:ring-[#CC0000]/10 resize-none transition-colors"
                     />
                   </div>
                 )}

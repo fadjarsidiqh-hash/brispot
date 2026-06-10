@@ -67,7 +67,6 @@ export default function DNDetailPage() {
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [bohNotes, setBohNotes] = useState('')
-  const [adkNotes, setAdkNotes] = useState('')
   const [draftConds, setDraftConds] = useState<DraftCondition[]>([])
   // 'manager' | 'boh' | 'adk' — which role is triggering the reject modal
   const [rejectRole, setRejectRole] = useState<'manager' | 'boh' | 'adk'>('boh')
@@ -147,7 +146,7 @@ export default function DNDetailPage() {
   const canDecideManager= dn.status === 'SUBMITTED'       && (profile?.role === 'MANAGER' || profile?.role === 'ADMIN')
   const canDecideBOH    = dn.status === 'DECIDED_MANAGER' && requiresBOH(dn) && (profile?.role === 'BOH' || profile?.role === 'ADMIN')
   const canVerifyADK    = (dn.status === 'DECIDED_BOH' || (dn.status === 'DECIDED_MANAGER' && !requiresBOH(dn))) && (profile?.role === 'ADK' || profile?.role === 'ADMIN')
-  const canComplete     = dn.status === 'VERIFIED_ADK'    && (profile?.role === 'ADK'  || profile?.role === 'BOH' || profile?.role === 'ADMIN')
+  const canComplete     = dn.status === 'VERIFIED_ADK'    && (profile?.role === 'ADK'  || profile?.role === 'ADMIN')
   const canResubmit     = dn.status === 'NEEDS_REVISION'  && profile?.id === dn.rm_id
 
   // DN sudah diputus final (menunggu verifikasi ADK) → masuk fase pelaksanaan PIC
@@ -641,29 +640,15 @@ export default function DNDetailPage() {
                 </div>
               )}
               {canVerifyADK && (
-                <div className="flex flex-col gap-2 w-full">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <button onClick={() => act(() => verifyADK(dn.id, profile!.id, adkNotes))}
-                      className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#7c3aed] rounded-lg hover:bg-[#6d28d9] transition-colors">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> {t.dnDetail.verifyADK}
-                    </button>
-                    <button onClick={() => { setRejectReason(''); setRejectRole('adk'); setShowRejectModal(true) }}
-                      className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#CC0000] rounded-lg hover:bg-[#a30000] transition-colors">
-                      <XCircle className="w-3.5 h-3.5" /> Tolak
-                    </button>
-                  </div>
-                  <div className="w-full">
-                    <label className="block text-[9px] font-semibold text-[#002470] mb-1">
-                      Catatan Verifikasi ADK <span className="text-[#9ca3af] font-normal">(opsional)</span>
-                    </label>
-                    <textarea
-                      value={adkNotes}
-                      onChange={(e) => setAdkNotes(e.target.value)}
-                      rows={3}
-                      placeholder="Contoh: dokumen telah diperiksa, kondisi kredit sesuai ketentuan, seluruh syarat terpenuhi..."
-                      className="w-full px-3 py-2 rounded-lg border border-[#e8ecf4] text-[10.5px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#7c3aed] focus:ring-2 focus:ring-[#7c3aed]/20 resize-none"
-                    />
-                  </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button onClick={() => act(async () => { await verifyADK(dn.id, profile!.id); await completeDN(dn.id) })}
+                    className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#7c3aed] rounded-lg hover:bg-[#6d28d9] transition-colors">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> {t.dnDetail.verifyADK}
+                  </button>
+                  <button onClick={() => { setRejectReason(''); setRejectRole('adk'); setShowRejectModal(true) }}
+                    className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#CC0000] rounded-lg hover:bg-[#a30000] transition-colors">
+                    <XCircle className="w-3.5 h-3.5" /> Tolak
+                  </button>
                 </div>
               )}
               {canComplete && (
