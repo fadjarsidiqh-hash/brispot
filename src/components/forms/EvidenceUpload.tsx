@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
 import { UploadCloud, X, FileText, Loader2, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -22,7 +21,6 @@ interface UploadedFile {
 }
 
 export function EvidenceUpload({ dnId, conditionId, onUploadComplete }: EvidenceUploadProps) {
-  const supabase = createClient()
   const { user } = useAuth()
   const [isDragging, setIsDragging] = useState(false)
   const [files, setFiles] = useState<UploadedFile[]>([])
@@ -32,32 +30,21 @@ export function EvidenceUpload({ dnId, conditionId, onUploadComplete }: Evidence
     const fileId = crypto.randomUUID()
     setFiles((prev) => [...prev, { id: fileId, name: file.name, size: file.size, status: 'uploading' }])
 
-    const path = `evidences/${dnId}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`
-    const { data: storageData, error: storageErr } = await supabase.storage
-      .from('brimos-evidence')
-      .upload(path, file, { upsert: false })
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('dnId', dnId)
+    if (conditionId) formData.append('conditionId', conditionId)
 
-    if (storageErr) {
-      setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'error', error: storageErr.message } : f))
+    const res = await fetch('/api/upload/evidence', { method: 'POST', body: formData })
+    const json = await res.json()
+
+    if (!res.ok || json.error) {
+      setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'error', error: json.error ?? 'Upload gagal' } : f))
       return
     }
 
-    const { data: { publicUrl } } = supabase.storage.from('brimos-evidence').getPublicUrl(storageData.path)
-
-    // Save record to DB
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('dn_evidences').insert({
-      dn_id: dnId,
-      condition_id: conditionId ?? null,
-      file_name: file.name,
-      file_path: storageData.path,
-      file_size: file.size,
-      mime_type: file.type,
-      uploaded_by: user.id,
-    })
-
-    setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'done', url: publicUrl } : f))
-    onUploadComplete?.(publicUrl)
+    setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'done', url: json.publicUrl } : f))
+    onUploadComplete?.(json.publicUrl)
   }
 
   const handleFiles = useCallback((fileList: FileList) => {

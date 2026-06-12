@@ -134,11 +134,15 @@ export function DNForm() {
 
     // Upload file SLIK opsional ke storage lalu simpan path-nya
     if (slikFile) {
-      const ext  = slikFile.name.split('.').pop() ?? 'pdf'
-      const path = `slik/${dn.id}/slik-${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage.from('brimos-evidence').upload(path, slikFile, { upsert: true })
-      if (!upErr) {
-        await supabase.from('decision_notes').update({ slik_file_path: path }).eq('id', dn.id)
+      const slikFormData = new FormData()
+      slikFormData.append('file', slikFile)
+      slikFormData.append('dnId', dn.id)
+      slikFormData.append('pathPrefix', 'slik')
+      slikFormData.append('saveRecord', 'false')
+      const upRes = await fetch('/api/upload/evidence', { method: 'POST', body: slikFormData })
+      const upJson = await upRes.json()
+      if (upRes.ok && upJson.path) {
+        await supabase.from('decision_notes').update({ slik_file_path: upJson.path }).eq('id', dn.id)
       }
     }
 
