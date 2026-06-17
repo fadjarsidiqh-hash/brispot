@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/hooks/useAuth'
 import type { DecisionNote, DecisionNoteWithRelations, InsertDN } from '@/types'
 import type { User } from '@supabase/supabase-js'
 
@@ -24,8 +25,6 @@ export function requiresBOH(dn: { credit_amount?: number | null; slik_status?: s
 }
 
 // ─── Role cache backed by sessionStorage with 5-minute TTL ─────────────────
-// Using sessionStorage (not module scope) means role changes by an admin are
-// picked up within 5 minutes, and the cache is per-tab (not shared across tabs).
 const ROLE_CACHE_KEY = 'brimos_role_cache'
 const ROLE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
@@ -56,14 +55,9 @@ function clearRoleCache(): void {
   try { sessionStorage.removeItem(ROLE_CACHE_KEY) } catch {}
 }
 
-/**
- * Resolve current user + role using the LOCAL cached session (no network call).
- * Role is fetched at most once per 5 minutes and cached in sessionStorage.
- */
 async function resolveAuth(
   supabase: ReturnType<typeof createClient>
 ): Promise<{ user: User | null; role: string | undefined }> {
-  // getSession() reads from in-memory/localStorage — no network round-trip.
   const { data: { session } } = await supabase.auth.getSession()
   const user = session?.user ?? null
   if (!user) {
@@ -74,14 +68,12 @@ async function resolveAuth(
   const cached = readRoleCache(user.id)
   if (cached !== null) return { user, role: cached }
 
-  // Try reading role from JWT metadata first — zero latency, no network call.
   const metaRole = (user.user_metadata?.role || user.app_metadata?.role) as string | undefined
   if (metaRole) {
     writeRoleCache(user.id, metaRole)
     return { user, role: metaRole }
   }
-  // Fallback: query profiles table with a 5-second safety timeout so the hook
-  // never hangs indefinitely (e.g. on Supabase free-tier cold start).
+
   const profilePromise = supabase.from('profiles').select('role').eq('id', user.id).single()
   const timeoutPromise = new Promise<{ data: null }>((resolve) =>
     setTimeout(() => resolve({ data: null }), 5000)
@@ -92,121 +84,107 @@ async function resolveAuth(
   return { user, role }
 }
 
+const FETCH_TIMEOUT_MS = 15000
+
 export function useDN(id?: string) {
   const supabase = createClient()
+  const { user, loading: authLoading } = useAuth()
   const [dn, setDN] = useState<DecisionNoteWithRelations | null>(null)
   const [list, setList] = useState<DecisionNote[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Holds the AbortController for the in-flight request so we can cancel
-  // the previous one whenever a new fetch starts (or component unmounts).
-  const activeController = useRef<AbortController | null>(null)
-
-  // Cancel any in-flight request on unmount so it never blocks future fetches.
-  useEffect(() => {
-    return () => {
-      activeController.current?.abort()
-      activeController.current = null
-    }
-  }, [])
-
-  // Create a fresh AbortController, cancelling any previous one.
-  // 12s safety timeout — if Supabase hangs, we bail out instead of stuck loading.
-  const newController = (): AbortController => {
-    activeController.current?.abort()
-    const c = new AbortController()
-    activeController.current = c
-    setTimeout(() => { if (!c.signal.aborted) c.abort() }, 12000)
-    return c
-  }
+  // Generation counter — only the latest in-flight request may update loading state.
+  // Replaces AbortController race that could leave loading=true forever.
+  const reqGen = useRef(0)
 
   const fetchList = useCallback(async () => {
-    const ctrl = newController()
+    const gen = ++reqGen.current
     setLoading(true)
     setError(null)
     try {
-      const { user, role } = await resolveAuth(supabase)
-      if (ctrl.signal.aborted) return
-      const { data, error } = await supabase
-        .from('decision_notes')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .abortSignal(ctrl.signal)
-      if (ctrl.signal.aborted) return
-      if (error) {
-        setError(error.message)
-      } else {
-        const visible = (data ?? []).filter((d) =>
-          d.confidentiality !== 'RAHASIA' || canViewConfidential(d, user, role)
-        )
-        setList(visible)
-      }
-    } catch (e) {
-      if (ctrl.signal.aborted) {
-        // Aborted by newer fetch or by timeout — silently drop.
-        // If timeout, surface a friendly error so user can retry.
-        if (!activeController.current || activeController.current === ctrl) {
-          setError('Permintaan terlalu lama. Silakan coba lagi.')
+      const work = async () => {
+        const { user: u, role } = await resolveAuth(supabase)
+        if (gen !== reqGen.current) return
+        const { data, error: qErr } = await supabase
+          .from('decision_notes')
+          .select('*')
+          .order('created_at', { ascending: false })
+        if (gen !== reqGen.current) return
+        if (qErr) {
+          setError(qErr.message)
+        } else {
+          const visible = (data ?? []).filter((d) =>
+            d.confidentiality !== 'RAHASIA' || canViewConfidential(d, u, role)
+          )
+          setList(visible)
         }
+      }
+      const timeout = new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error('TIMEOUT')), FETCH_TIMEOUT_MS)
+      )
+      await Promise.race([work(), timeout])
+    } catch (e) {
+      if (gen !== reqGen.current) return
+      if (e instanceof Error && e.message === 'TIMEOUT') {
+        setError('Permintaan terlalu lama. Silakan coba lagi.')
       } else {
         setError(e instanceof Error ? e.message : 'Fetch error')
       }
     } finally {
-      // ALWAYS clear loading — only skip if this request was superseded by a newer one.
-      if (activeController.current === ctrl || activeController.current === null) {
-        setLoading(false)
-      }
+      if (gen === reqGen.current) setLoading(false)
     }
   }, [supabase])
 
   const fetchOne = useCallback(async (dnId: string) => {
-    const ctrl = newController()
+    const gen = ++reqGen.current
     setLoading(true)
     setError(null)
     try {
-      const { user, role } = await resolveAuth(supabase)
-      if (ctrl.signal.aborted) return
-      const { data, error } = await supabase
-        .from('decision_notes')
-        .select(`
-          *,
-          rm:rm_id(id, full_name, email),
-          adk:adk_id(id, full_name, email),
-          boh:boh_id(id, full_name, email),
-          manager:manager_id(id, full_name, email),
-          conditions:dn_conditions(*),
-          evidences:dn_evidences(*),
-          followup_actions(*)
-        `)
-        .eq('id', dnId)
-        .abortSignal(ctrl.signal)
-        .single()
-      if (ctrl.signal.aborted) return
-      if (error) {
-        setError(error.message)
-      } else if (data) {
-        const d = data as unknown as DecisionNoteWithRelations
-        if (d.confidentiality === 'RAHASIA' && !canViewConfidential(d as unknown as DecisionNote, user, role)) {
-          setError('Anda tidak memiliki akses ke DN rahasia ini.')
-          setDN(null)
-        } else {
-          setDN(d)
-          setError(null)
+      const work = async () => {
+        const { user: u, role } = await resolveAuth(supabase)
+        if (gen !== reqGen.current) return
+        const { data, error: qErr } = await supabase
+          .from('decision_notes')
+          .select(`
+            *,
+            rm:rm_id(id, full_name, email),
+            adk:adk_id(id, full_name, email),
+            boh:boh_id(id, full_name, email),
+            manager:manager_id(id, full_name, email),
+            conditions:dn_conditions(*),
+            evidences:dn_evidences(*),
+            followup_actions(*)
+          `)
+          .eq('id', dnId)
+          .single()
+        if (gen !== reqGen.current) return
+        if (qErr) {
+          setError(qErr.message)
+        } else if (data) {
+          const d = data as unknown as DecisionNoteWithRelations
+          if (d.confidentiality === 'RAHASIA' && !canViewConfidential(d as unknown as DecisionNote, u, role)) {
+            setError('Anda tidak memiliki akses ke DN rahasia ini.')
+            setDN(null)
+          } else {
+            setDN(d)
+            setError(null)
+          }
         }
       }
+      const timeout = new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error('TIMEOUT')), FETCH_TIMEOUT_MS)
+      )
+      await Promise.race([work(), timeout])
     } catch (e) {
-      if (ctrl.signal.aborted) {
-        if (!activeController.current || activeController.current === ctrl) {
-          setError('Permintaan terlalu lama. Silakan coba lagi.')
-        }
+      if (gen !== reqGen.current) return
+      if (e instanceof Error && e.message === 'TIMEOUT') {
+        setError('Permintaan terlalu lama. Silakan coba lagi.')
       } else {
         setError(e instanceof Error ? e.message : 'Fetch error')
       }
     } finally {
-      if (activeController.current === ctrl || activeController.current === null) {
-        setLoading(false)
-      }
+      if (gen === reqGen.current) setLoading(false)
     }
   }, [supabase])
 
@@ -316,19 +294,22 @@ export function useDN(id?: string) {
     return result
   }
 
-  // ─── Single trigger effect ──────────────────────────────────────────────────
-  // Because id/fetchOne/fetchList never change, this fires exactly ONCE per mount.
+  // Wait for auth before fetching — prevents fetch during session init that can race/hang.
   useEffect(() => {
+    if (authLoading) return
+    if (!user) {
+      setLoading(false)
+      setList([])
+      setDN(null)
+      return
+    }
     if (id) fetchOne(id)
     else fetchList()
-  }, [id, fetchOne, fetchList])
+  }, [id, fetchOne, fetchList, authLoading, user?.id])
 
-  // ─── Realtime subscription for single-DN view ───────────────────────────────
-  // When viewing a DN detail page, subscribe to Postgres changes on both the
-  // decision_notes row and its dn_conditions so any update by another user
-  // (e.g. Manager approves, BOH decides) is reflected immediately without refresh.
+  // Realtime subscription for single-DN detail view
   useEffect(() => {
-    if (!id) return
+    if (!id || !user) return
 
     const channel = supabase
       .channel(`dn-detail-${id}`)
@@ -347,7 +328,7 @@ export function useDN(id?: string) {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [id, supabase, fetchOne])
+  }, [id, supabase, fetchOne, user?.id])
 
   return {
     dn, list, loading, error,

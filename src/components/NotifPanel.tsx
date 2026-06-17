@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Notification } from '@/types'
 import { formatDate } from '@/lib/utils'
+import Link from 'next/link'
 import { Bell, X, Check } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -20,13 +21,28 @@ export function NotifPanel({ onClose, onRead }: NotifPanelProps) {
 
   useEffect(() => {
     if (!user) return
-    supabase
-      .from('notifications')
-      .select('*')
-      .eq('recipient_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(20)
-      .then(({ data }) => setItems(data ?? []))
+    const load = () => {
+      supabase
+        .from('notifications')
+        .select('*')
+        .eq('recipient_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20)
+        .then(({ data }) => setItems(data ?? []))
+    }
+    load()
+
+    const channel = supabase
+      .channel(`notif-panel-${user.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'brimos',
+        table: 'notifications',
+        filter: `recipient_id=eq.${user.id}`,
+      }, () => { load() })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [supabase, user])
 
   // Close on outside click
@@ -82,15 +98,28 @@ export function NotifPanel({ onClose, onRead }: NotifPanelProps) {
           <p className="text-center text-sm text-gray-400 py-8">Tidak ada notifikasi</p>
         ) : (
           items.map((n) => (
-            <div
-              key={n.id}
-              onClick={() => markRead(n.id)}
-              className={`px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${!n.is_read ? 'bg-blue-50' : ''}`}
-            >
-              <p className={`text-sm font-medium ${!n.is_read ? 'text-gray-900' : 'text-gray-600'}`}>{n.subject}</p>
-              <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.body}</p>
-              <p className="text-xs text-gray-400 mt-1">{formatDate(n.created_at, 'dd MMM yyyy HH:mm')}</p>
-            </div>
+            n.dn_id ? (
+              <Link
+                key={n.id}
+                href={`/decision-notes/${n.dn_id}`}
+                onClick={() => markRead(n.id)}
+                className={`block px-4 py-3 hover:bg-gray-50 transition-colors ${!n.is_read ? 'bg-blue-50' : ''}`}
+              >
+                <p className={`text-sm font-medium ${!n.is_read ? 'text-gray-900' : 'text-gray-600'}`}>{n.subject}</p>
+                <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.body}</p>
+                <p className="text-xs text-gray-400 mt-1">{formatDate(n.created_at, 'dd MMM yyyy HH:mm')}</p>
+              </Link>
+            ) : (
+              <div
+                key={n.id}
+                onClick={() => markRead(n.id)}
+                className={`px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${!n.is_read ? 'bg-blue-50' : ''}`}
+              >
+                <p className={`text-sm font-medium ${!n.is_read ? 'text-gray-900' : 'text-gray-600'}`}>{n.subject}</p>
+                <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.body}</p>
+                <p className="text-xs text-gray-400 mt-1">{formatDate(n.created_at, 'dd MMM yyyy HH:mm')}</p>
+              </div>
+            )
           ))
         )}
       </div>

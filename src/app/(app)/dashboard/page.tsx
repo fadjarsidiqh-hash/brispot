@@ -6,6 +6,9 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { useI18n } from '@/contexts/I18nContext'
 import Link from 'next/link'
 import { Bell, Plus } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import type { Notification, DecisionNote } from '@/types'
 
 const STAT_VARIANTS = {
   blue:  { border: 'border-t-[#003087]', num: 'text-[#003087]', badge: 'bg-[#e8f0fe] text-[#003087]' },
@@ -49,8 +52,153 @@ function getDNBorderColor(status: string, dueDate: string | null) {
   return 'border-l-[#003087]'
 }
 
+/** Pending DN items that require action from the current role (covers DNs without in-app notification rows). */
+function getPendingActions(dns: DecisionNote[], role: string | undefined): DecisionNote[] {
+  if (role === 'MANAGER' || role === 'ADMIN') {
+    return dns.filter((d) => d.status === 'SUBMITTED')
+  }
+  if (role === 'BOH') {
+    return dns.filter((d) => d.status === 'DECIDED_MANAGER' && requiresBOH(d))
+  }
+  if (role === 'ADK') {
+    return dns.filter((d) =>
+      d.status === 'DECIDED_BOH' ||
+      (d.status === 'DECIDED_MANAGER' && !requiresBOH(d))
+    )
+  }
+  if (role === 'RM') {
+    return dns.filter((d) => d.status === 'NEEDS_REVISION')
+  }
+  return []
+}
+
+function DashboardNotifFeed({
+  dns,
+  role,
+  userId,
+  overdue,
+  nearDue,
+  t,
+}: {
+  dns: DecisionNote[]
+  role: string | undefined
+  userId: string | undefined
+  overdue: number
+  nearDue: number
+  t: ReturnType<typeof useI18n>['t']
+}) {
+  const [notifs, setNotifs] = useState<Notification[]>([])
+
+  useEffect(() => {
+    if (!userId) return
+    const supabase = createClient()
+
+    const load = async () => {
+      const { data } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('recipient_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(8)
+      setNotifs(data ?? [])
+    }
+
+    load()
+
+    const channel = supabase
+      .channel(`dash-notif-${userId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'brimos',
+        table: 'notifications',
+        filter: `recipient_id=eq.${userId}`,
+      }, () => { load() })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [userId])
+
+  const pending = getPendingActions(dns, role)
+  const unreadNotifs = notifs.filter((n) => !n.is_read)
+  const notifDnIds = new Set(unreadNotifs.map((n) => n.dn_id).filter(Boolean))
+  const pendingUnique = pending.filter((d) => !notifDnIds.has(d.id))
+  const hasAnything = unreadNotifs.length > 0 || pendingUnique.length > 0 || overdue > 0 || nearDue > 0
+
+  if (!hasAnything) {
+    return <p className="text-[11px] text-gray-400 py-4 text-center">{t.dashboard.noUrgent}</p>
+  }
+
+  return (
+    <div className="space-y-0 divide-y divide-[#e8ecf4]">
+      {/* Pending actions from DN queue — always shown even if notification row missing */}
+      {pendingUnique.slice(0, 4).map((dn) => (
+        <Link
+          key={`pending-${dn.id}`}
+          href={`/decision-notes/${dn.id}`}
+          className="flex items-start gap-2 py-2.5 hover:bg-[#f8fafc] transition-colors -mx-1 px-1 rounded-lg"
+        >
+          <div className="w-1.5 h-1.5 rounded-full bg-[#003087] mt-1.5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold text-[#002470] truncate">
+              {dn.debtor_name} — {dn.dn_number}
+            </p>
+            <p className="text-[9px] text-[#718096] mt-0.5">
+              {role === 'MANAGER' || role === 'ADMIN'
+                ? 'Menunggu putusan CBM / Manager'
+                : role === 'BOH'
+                  ? 'Menunggu putusan BOH'
+                  : role === 'ADK'
+                    ? 'Menunggu verifikasi ADK'
+                    : 'Perlu revisi dokumen'}
+            </p>
+          </div>
+          <span className="text-[8px] font-bold text-white bg-[#003087] px-1.5 py-0.5 rounded-full shrink-0">
+            Aksi
+          </span>
+        </Link>
+      ))}
+
+      {/* In-app notifications from DB (bell panel parity) */}
+      {unreadNotifs.slice(0, 5).map((n) => (
+        <Link
+          key={n.id}
+          href={n.dn_id ? `/decision-notes/${n.dn_id}` : '/decision-notes'}
+          className="flex items-start gap-2 py-2.5 hover:bg-[#f8fafc] transition-colors -mx-1 px-1 rounded-lg"
+        >
+          <div className="w-1.5 h-1.5 rounded-full bg-[#f0b429] mt-1.5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold text-[#002470] truncate">{n.subject}</p>
+            <p className="text-[9px] text-[#718096] mt-0.5 line-clamp-2">{n.body}</p>
+            <p className="text-[8px] text-[#9ca3af] mt-0.5">
+              {formatDate(n.created_at, 'dd MMM yyyy HH:mm')}
+            </p>
+          </div>
+        </Link>
+      ))}
+
+      {/* SLA warnings */}
+      {dns.filter((d) => d.status === 'ESCALATED').slice(0, 2).map((dn) => (
+        <div key={`esc-${dn.id}`} className="flex items-start gap-2 py-2.5">
+          <div className="w-1.5 h-1.5 rounded-full bg-[#CC0000] mt-1.5 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-[10px] text-[#4a5568] leading-snug truncate">
+              <strong>{dn.debtor_name}</strong> — {t.dashboard.overdueAction}
+            </p>
+          </div>
+        </div>
+      ))}
+      {nearDue > 0 && (
+        <div className="flex items-start gap-2 py-2.5">
+          <div className="w-1.5 h-1.5 rounded-full bg-[#f0b429] mt-1.5 shrink-0" />
+          <p className="text-[10px] text-[#4a5568]">{t.dashboard.nearDueLabel(nearDue)}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function DashboardPage() {
-  const { profile } = useAuth()
+  const { profile, user } = useAuth()
   const { list: dns } = useDN()
   const { t } = useI18n()
 
@@ -184,36 +332,22 @@ export default function DashboardPage() {
         <div className="space-y-3">
           {/* Notifications */}
           <div className="bg-white rounded-[10px] border border-[#e8ecf4] shadow-[0_1px_3px_rgba(0,36,112,0.07)] p-3.5">
-            <div className="flex items-center gap-2 text-[11px] font-bold text-[#002470] mb-3">
-              <Bell className="w-3.5 h-3.5" /> {t.dashboard.notifTitle}
-            </div>
-            {overdue === 0 && nearDue === 0 ? (
-              <p className="text-[11px] text-gray-400 py-4 text-center">{t.dashboard.noUrgent}</p>
-            ) : (
-              <div className="space-y-0">
-                {dns.filter((d) => d.status === 'ESCALATED').slice(0, 3).map((dn) => (
-                  <div key={dn.id} className="flex items-start gap-2 py-2 border-b border-[#e8ecf4]">
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#CC0000] mt-1.5 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-[10px] text-[#4a5568] leading-snug truncate">
-                        <strong>{dn.debtor_name}</strong> — {t.dashboard.overdueAction}
-                      </p>
-                      <p className="text-[8px] text-[#9ca3af] mt-0.5">
-                        {dn.due_date ? formatDate(dn.due_date) : t.dashboard.pastDeadline}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {nearDue > 0 && (
-                  <div className="flex items-start gap-2 py-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#f0b429] mt-1.5 shrink-0" />
-                    <p className="text-[10px] text-[#4a5568]">
-                      {t.dashboard.nearDueLabel(nearDue)}
-                    </p>
-                  </div>
-                )}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2 text-[11px] font-bold text-[#002470]">
+                <Bell className="w-3.5 h-3.5" /> {t.dashboard.notifTitle}
               </div>
-            )}
+              <Link href="/decision-notes" className="text-[9px] text-[#003087] font-medium hover:underline">
+                {t.common.viewAll}
+              </Link>
+            </div>
+            <DashboardNotifFeed
+              dns={dns}
+              role={profile?.role}
+              userId={user?.id}
+              overdue={overdue}
+              nearDue={nearDue}
+              t={t}
+            />
           </div>
         </div>
 

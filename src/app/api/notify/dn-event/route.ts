@@ -151,8 +151,10 @@ async function getRecipients(event: string, dn: DNRecord, supabase: ReturnType<t
     case 'REJECTED':
     case 'NEEDS_REVISION':
       return [dn.rm].filter(Boolean) as Profile[]
-    case 'RESUBMITTED':
-      return [dn.manager, dn.boh, dn.adk].filter(Boolean) as Profile[]
+    case 'RESUBMITTED': {
+      const managers = dn.manager ? [dn.manager] : await branchUsers('MANAGER')
+      return [...managers, dn.boh, dn.adk].filter(Boolean) as Profile[]
+    }
     default:
       return []
   }
