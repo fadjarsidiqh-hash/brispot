@@ -7,9 +7,9 @@ import { StatusTimeline } from '@/components/StatusTimeline'
 import { EscalationCountdown } from '@/components/EscalationCountdown'
 import { PRIORITY_COLORS, formatCurrency, formatDate } from '@/lib/utils'
 import Link from 'next/link'
-import { ArrowLeft, UploadCloud, CheckCircle2, Lock, Globe, XCircle, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, UploadCloud, CheckCircle2, Lock, Globe, XCircle, Plus, Trash2, Loader2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useI18n } from '@/contexts/I18nContext'
 
 // Daftar tindak lanjut standar sesuai flowchart BRISPOT
@@ -70,12 +70,19 @@ export default function DNDetailPage() {
   const [draftConds, setDraftConds] = useState<DraftCondition[]>([])
   // 'manager' | 'boh' | 'adk' — which role is triggering the reject modal
   const [rejectRole, setRejectRole] = useState<'manager' | 'boh' | 'adk'>('boh')
+  // Track whether the user has typed notes that haven't been saved yet
+  const [notesIsDirty, setNotesIsDirty] = useState(false)
 
-  const act = async (fn: () => Promise<unknown>) => {
+  const act = async (fn: () => Promise<unknown>, opts?: { clearDraft?: boolean }) => {
     setActing(true)
-    await fn()
-    await fetchOne(id)
-    setActing(false)
+    try {
+      await fn()
+      await fetchOne(id)
+      setNotesIsDirty(false)
+      if (opts?.clearDraft) setDraftConds([])
+    } finally {
+      setActing(false)
+    }
   }
 
   const addDraftCond = () =>
@@ -109,7 +116,35 @@ export default function DNDetailPage() {
         .eq('id', condId)
     })
 
-  if (loading || acting) return <div className="flex items-center justify-center h-64 text-[11px] text-[#9ca3af]">{t.common.loading}</div>
+  // Sync confidentiality selector with the value already saved in DB so BOH/Manager
+  // never accidentally overwrite it with the default 'UMUM' on re-open.
+  useEffect(() => {
+    if (dn?.confidentiality) setConfid(dn.confidentiality)
+  }, [dn?.id])
+
+  // Pre-fill notes textarea with values already persisted — data survives page refresh.
+  // Also reset dirty flag so the beforeunload guard doesn't fire on first load.
+  useEffect(() => {
+    if (!dn || !profile) return
+    if (profile.role === 'BOH' && dn.boh_notes) setBohNotes(dn.boh_notes)
+    else if ((profile.role === 'MANAGER' || profile.role === 'ADMIN') && dn.manager_notes) setBohNotes(dn.manager_notes)
+    setNotesIsDirty(false)
+  }, [dn?.id, profile?.id])
+
+  // Warn before closing/reloading the tab when the user has unsaved notes or draft conditions.
+  // The browser shows a generic "Leave site?" dialog — custom messages are not supported.
+  useEffect(() => {
+    const isDirty = notesIsDirty || draftConds.length > 0
+    if (!isDirty) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [notesIsDirty, draftConds.length])
+
+  // Show full-page spinner only while initial data loads, NOT while an action is in flight.
+  // Keeping the page visible during `acting` lets users read the DN and avoids the
+  // appearance of a broken / unresponsive page.
+  if (loading) return <div className="flex items-center justify-center h-64 text-[11px] text-[#9ca3af]">{t.common.loading}</div>
   if (error) return (
     <div className="flex flex-col items-center justify-center h-64 gap-3">
       <p className="text-[11px] text-[#CC0000] font-medium text-center max-w-xs">{error}</p>
@@ -490,14 +525,16 @@ export default function DNDetailPage() {
             <div className="flex flex-wrap gap-2">
               {canSubmit && (
                 <button onClick={() => act(() => submitDN(dn.id))}
-                  className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#003087] rounded-lg hover:bg-[#002470] transition-colors">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> {t.dnDetail.submitBtn}
+                  disabled={acting}
+                  className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#003087] rounded-lg hover:bg-[#002470] disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
+                  {acting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} {t.dnDetail.submitBtn}
                 </button>
               )}
               {canResubmit && (
                 <button onClick={() => act(() => resubmitDN(dn.id, (dn.revision_from_status as 'SUBMITTED' | 'DECIDED_MANAGER' | 'DECIDED_BOH') ?? 'SUBMITTED'))}
-                  className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#f0b429] rounded-lg hover:bg-[#d4a020] transition-colors">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> {t.dnDetail.resubmitBtn}
+                  disabled={acting}
+                  className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#f0b429] rounded-lg hover:bg-[#d4a020] disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
+                  {acting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} {t.dnDetail.resubmitBtn}
                 </button>
               )}
               {canDecideManager && (
@@ -511,12 +548,14 @@ export default function DNDetailPage() {
                       <option value="UMUM">{t.dnDetail.general}</option>
                       <option value="RAHASIA">{t.dnDetail.confidential}</option>
                     </select>
-                    <button onClick={() => act(async () => { await insertDraftConds(dn.id); await decideManager(dn.id, confid, profile!.id, bohNotes) })}
-                      className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#00897b] rounded-lg hover:bg-[#00695c] transition-colors">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Putuskan (CBM / Manager)
+                    <button onClick={() => act(async () => { await insertDraftConds(dn.id); await decideManager(dn.id, confid, profile!.id, bohNotes) }, { clearDraft: true })}
+                      disabled={acting}
+                      className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#00897b] rounded-lg hover:bg-[#00695c] disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
+                      {acting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Putuskan (CBM / Manager)
                     </button>
                     <button onClick={() => { setRejectReason(''); setRejectRole('manager'); setShowRejectModal(true) }}
-                      className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#CC0000] rounded-lg hover:bg-[#a30000] transition-colors">
+                      disabled={acting}
+                      className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#CC0000] rounded-lg hover:bg-[#a30000] disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
                       <XCircle className="w-3.5 h-3.5" /> Tolak
                     </button>
                   </div>
@@ -596,7 +635,7 @@ export default function DNDetailPage() {
                     </label>
                     <textarea
                       value={bohNotes}
-                      onChange={(e) => setBohNotes(e.target.value)}
+                      onChange={(e) => { setBohNotes(e.target.value); setNotesIsDirty(true) }}
                       rows={3}
                       placeholder="Catatan putusan, syarat, atau hal yang perlu diperhatikan pemutus berikutnya..."
                       className="w-full px-3 py-2 rounded-lg border border-[#e8ecf4] text-[10.5px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#00897b] focus:ring-2 focus:ring-[#00897b]/20 resize-none"
@@ -615,12 +654,14 @@ export default function DNDetailPage() {
                       <option value="UMUM">{t.dnDetail.general}</option>
                       <option value="RAHASIA">{t.dnDetail.confidential}</option>
                     </select>
-                    <button onClick={() => act(() => decideBOH(dn.id, confid, profile!.id, bohNotes))}
-                      className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-[#002470] bg-[#f0b429] rounded-lg hover:bg-[#d4a020] transition-colors">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> {t.dnDetail.decideBOH}
+                    <button onClick={() => act(() => decideBOH(dn.id, confid, profile!.id, bohNotes), { clearDraft: true })}
+                      disabled={acting}
+                      className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-[#002470] bg-[#f0b429] rounded-lg hover:bg-[#d4a020] disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
+                      {acting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} {t.dnDetail.decideBOH}
                     </button>
                     <button onClick={() => { setRejectReason(''); setRejectRole('boh'); setShowRejectModal(true) }}
-                      className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#CC0000] rounded-lg hover:bg-[#a30000] transition-colors">
+                      disabled={acting}
+                      className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#CC0000] rounded-lg hover:bg-[#a30000] disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
                       <XCircle className="w-3.5 h-3.5" /> Tolak
                     </button>
                   </div>
@@ -631,7 +672,7 @@ export default function DNDetailPage() {
                     </label>
                     <textarea
                       value={bohNotes}
-                      onChange={(e) => setBohNotes(e.target.value)}
+                      onChange={(e) => { setBohNotes(e.target.value); setNotesIsDirty(true) }}
                       rows={3}
                       placeholder="Contoh: perhatikan kondisi #2 dan #3, pastikan dokumen SKMHT sudah lengkap sebelum ADK memverifikasi..."
                       className="w-full px-3 py-2 rounded-lg border border-[#e8ecf4] text-[10.5px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#f0b429] focus:ring-2 focus:ring-[#f0b429]/20 resize-none"
@@ -642,19 +683,22 @@ export default function DNDetailPage() {
               {canVerifyADK && (
                 <div className="flex items-center gap-2 flex-wrap">
                   <button onClick={() => act(async () => { await verifyADK(dn.id, profile!.id); await completeDN(dn.id) })}
-                    className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#7c3aed] rounded-lg hover:bg-[#6d28d9] transition-colors">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> {t.dnDetail.verifyADK}
+                    disabled={acting}
+                    className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#7c3aed] rounded-lg hover:bg-[#6d28d9] disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
+                    {acting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} {t.dnDetail.verifyADK}
                   </button>
                   <button onClick={() => { setRejectReason(''); setRejectRole('adk'); setShowRejectModal(true) }}
-                    className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#CC0000] rounded-lg hover:bg-[#a30000] transition-colors">
+                    disabled={acting}
+                    className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#CC0000] rounded-lg hover:bg-[#a30000] disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
                     <XCircle className="w-3.5 h-3.5" /> Tolak
                   </button>
                 </div>
               )}
               {canComplete && (
                 <button onClick={() => act(() => completeDN(dn.id))}
-                  className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#22c55e] rounded-lg hover:bg-[#16a34a] transition-colors">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> {t.dnDetail.completeBtn}
+                  disabled={acting}
+                  className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white bg-[#22c55e] rounded-lg hover:bg-[#16a34a] disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
+                  {acting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} {t.dnDetail.completeBtn}
                 </button>
               )}
               <Link href={`/decision-notes/${dn.id}/upload`}

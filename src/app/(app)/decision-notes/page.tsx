@@ -4,9 +4,10 @@ import { useDN } from '@/hooks/useDN'
 import { PRIORITY_COLORS, formatCurrency, formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { Plus, Search, Lock, Globe, AlertCircle, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useI18n } from '@/contexts/I18nContext'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
+import { Suspense } from 'react'
 
 const STATUS_PILL: Record<string, string> = {
   ESCALATED:    'bg-[#fff0f0] text-[#CC0000]',
@@ -61,15 +62,29 @@ function getRowBorder(status: string, dueDate: string | null) {
   return 'border-l-[#003087]'
 }
 
-export default function DecisionNotesPage() {
+// Inner component — must be separate so the Suspense boundary sits ABOVE the
+// useSearchParams() call, as required by Next.js 14 App Router.
+function DecisionNotesContent() {
   const { list, loading, error, fetchList } = useDN()
   const { profile } = useAuth()
   const { t } = useI18n()
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
   const canCreate = profile?.role === 'RM' || profile?.role === 'ADMIN'
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [priorityFilter, setPriorityFilter] = useState('')
-  const [confidFilter, setConfidFilter] = useState('')
+
+  // Filters are stored in the URL so they survive page refresh and can be shared/bookmarked
+  const search         = searchParams.get('q')        ?? ''
+  const statusFilter   = searchParams.get('status')   ?? ''
+  const priorityFilter = searchParams.get('priority') ?? ''
+  const confidFilter   = searchParams.get('confid')   ?? ''
+
+  const setFilter = (key: string, value: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (value) { params.set(key, value) } else { params.delete(key) }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
 
   const filtered = list.filter((dn) => {
     const matchSearch = !search ||
@@ -105,7 +120,7 @@ export default function DecisionNotesPage() {
             <input
               name="dn-search"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => setFilter('q', e.target.value)}
               placeholder={t.dnList.searchPlaceholder}
               className="w-full pl-8 pr-3 py-2 rounded-lg border border-[#e8ecf4] text-[11px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#003087] focus:ring-2 focus:ring-[#003087]/10 transition-colors"
             />
@@ -113,7 +128,7 @@ export default function DecisionNotesPage() {
           <select
             name="dn-status-filter"
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => setFilter('status', e.target.value)}
             className="py-2 px-2.5 rounded-lg border border-[#e8ecf4] text-[11px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#003087] transition-colors"
           >
             <option value="">{t.common.allStatus}</option>
@@ -124,7 +139,7 @@ export default function DecisionNotesPage() {
           <select
             name="dn-priority-filter"
             value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
+            onChange={(e) => setFilter('priority', e.target.value)}
             className="py-2 px-2.5 rounded-lg border border-[#e8ecf4] text-[11px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#003087] transition-colors"
           >
             <option value="">{t.common.allPriority}</option>
@@ -136,7 +151,7 @@ export default function DecisionNotesPage() {
           <select
             name="dn-confid-filter"
             value={confidFilter}
-            onChange={(e) => setConfidFilter(e.target.value)}
+            onChange={(e) => setFilter('confid', e.target.value)}
             className="py-2 px-2.5 rounded-lg border border-[#e8ecf4] text-[11px] text-[#002470] bg-[#fafbfc] focus:outline-none focus:border-[#003087] transition-colors"
           >
             <option value="">{t.common.no === 'No' ? 'All Confidentiality' : 'Semua Kerahasiaan'}</option>
@@ -247,6 +262,19 @@ export default function DecisionNotesPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function DecisionNotesPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center h-40 gap-2">
+        <div className="w-5 h-5 border-2 border-[#003087] border-t-transparent rounded-full animate-spin" />
+        <span className="text-[11px] text-[#9ca3af]">Memuat...</span>
+      </div>
+    }>
+      <DecisionNotesContent />
+    </Suspense>
   )
 }
 

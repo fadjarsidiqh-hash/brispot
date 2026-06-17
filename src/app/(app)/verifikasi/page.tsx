@@ -291,7 +291,11 @@ export default function VerifikasiPage() {
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     {isDeciderFor(selected)
-                      ? (requiresBOH(selected) ? 'Putuskan → Teruskan ke BOH' : 'Setujui / Putuskan (CBM)')
+                      ? (role === 'BOH'
+                          ? 'Setujui (BOH)'
+                          : requiresBOH(selected)
+                            ? 'Putuskan → Teruskan ke BOH'
+                            : 'Setujui / Putuskan (CBM)')
                       : t.verif.approveADK}
                   </button>
                   <button

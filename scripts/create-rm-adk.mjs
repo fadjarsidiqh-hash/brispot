@@ -4,8 +4,13 @@
  * Run: node scripts/create-rm-adk.mjs
  */
 
-const SUPABASE_URL = 'https://pnlwwnaxhcsmzhtjfbro.supabase.co'
-const SERVICE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBubHd3bmF4aGNzbXpodGpmYnJvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTUzMzg2MCwiZXhwIjoyMDg3MTA5ODYwfQ.1Qy-7o0l9mKySKR9D_ctV_g63Vmt-7mzI4JkApErxkU'
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (!SUPABASE_URL || !SERVICE_KEY) {
+  console.error('❌  Set NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY env vars before running this script.')
+  process.exit(1)
+}
 
 const PHONE = '6281617543660'
 

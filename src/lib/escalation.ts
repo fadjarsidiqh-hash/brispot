@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { countWorkingDays, calcEscalationDate } from '@/lib/holidays'
+import { countWorkingDays, calcEscalationDate, addWorkingDays } from '@/lib/holidays'
 import { sendEmail, sendWhatsApp, buildDNOverdueEmail, buildDNEscalationEmail } from '@/lib/notifications'
 import { parseISO } from 'date-fns'
 
@@ -85,12 +85,19 @@ export async function runConditionReminders(): Promise<void> {
   const supabase = createClient()
   const today = new Date()
   const ymd = (d: Date) => d.toISOString().split('T')[0]
-  const addDays = (n: number) => {
-    const d = new Date(today)
-    d.setDate(d.getDate() + n)
-    return ymd(d)
+
+  // Use working days (skipping weekends + national holidays from the holidays table)
+  // so H-7/H-3/H-1 reminders fire exactly 7/3/1 business days before due date.
+  const [h7Date, h3Date, h1Date] = await Promise.all([
+    addWorkingDays(today, 7),
+    addWorkingDays(today, 3),
+    addWorkingDays(today, 1),
+  ])
+  const hMap: Record<string, number> = {
+    [ymd(h7Date)]: 7,
+    [ymd(h3Date)]: 3,
+    [ymd(h1Date)]: 1,
   }
-  const hMap: Record<string, number> = { [addDays(7)]: 7, [addDays(3)]: 3, [addDays(1)]: 1 }
 
   // Tandai tindak lanjut yang sudah lewat jatuh tempo sebagai OVERDUE
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

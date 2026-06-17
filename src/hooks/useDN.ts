@@ -23,13 +23,42 @@ export function requiresBOH(dn: { credit_amount?: number | null; slik_status?: s
   return (dn.credit_amount ?? 0) > BOH_THRESHOLD || dn.slik_status === 'MERAH'
 }
 
-// Cache role lookup so we only hit the profiles table once per session.
-let _cachedRole: { userId: string; role: string | undefined } | null = null
+// ─── Role cache backed by sessionStorage with 5-minute TTL ─────────────────
+// Using sessionStorage (not module scope) means role changes by an admin are
+// picked up within 5 minutes, and the cache is per-tab (not shared across tabs).
+const ROLE_CACHE_KEY = 'brimos_role_cache'
+const ROLE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+type RoleCacheEntry = { userId: string; role: string | undefined; expiresAt: number }
+
+function readRoleCache(userId: string): string | undefined | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(ROLE_CACHE_KEY)
+    if (!raw) return null
+    const entry: RoleCacheEntry = JSON.parse(raw)
+    if (entry.userId !== userId || Date.now() > entry.expiresAt) return null
+    return entry.role
+  } catch { return null }
+}
+
+function writeRoleCache(userId: string, role: string | undefined): void {
+  if (typeof window === 'undefined') return
+  try {
+    sessionStorage.setItem(ROLE_CACHE_KEY, JSON.stringify({
+      userId, role, expiresAt: Date.now() + ROLE_CACHE_TTL,
+    } satisfies RoleCacheEntry))
+  } catch {}
+}
+
+function clearRoleCache(): void {
+  if (typeof window === 'undefined') return
+  try { sessionStorage.removeItem(ROLE_CACHE_KEY) } catch {}
+}
 
 /**
- * Resolve current user + role using the LOCAL cached session (synchronous,
- * no network call) — avoids hangs on rapid back/forth navigation.
- * Role is fetched once per user and cached at module level.
+ * Resolve current user + role using the LOCAL cached session (no network call).
+ * Role is fetched at most once per 5 minutes and cached in sessionStorage.
  */
 async function resolveAuth(
   supabase: ReturnType<typeof createClient>
@@ -38,16 +67,17 @@ async function resolveAuth(
   const { data: { session } } = await supabase.auth.getSession()
   const user = session?.user ?? null
   if (!user) {
-    _cachedRole = null
+    clearRoleCache()
     return { user: null, role: undefined }
   }
-  if (_cachedRole && _cachedRole.userId === user.id) {
-    return { user, role: _cachedRole.role }
-  }
+
+  const cached = readRoleCache(user.id)
+  if (cached !== null) return { user, role: cached }
+
   // Try reading role from JWT metadata first — zero latency, no network call.
   const metaRole = (user.user_metadata?.role || user.app_metadata?.role) as string | undefined
   if (metaRole) {
-    _cachedRole = { userId: user.id, role: metaRole }
+    writeRoleCache(user.id, metaRole)
     return { user, role: metaRole }
   }
   // Fallback: query profiles table with a 5-second safety timeout so the hook
@@ -58,7 +88,7 @@ async function resolveAuth(
   )
   const { data: p } = await Promise.race([profilePromise, timeoutPromise]) as { data: { role: string } | null }
   const role = (p as { role: string } | null)?.role
-  _cachedRole = { userId: user.id, role }
+  writeRoleCache(user.id, role)
   return { user, role }
 }
 
@@ -292,6 +322,32 @@ export function useDN(id?: string) {
     if (id) fetchOne(id)
     else fetchList()
   }, [id, fetchOne, fetchList])
+
+  // ─── Realtime subscription for single-DN view ───────────────────────────────
+  // When viewing a DN detail page, subscribe to Postgres changes on both the
+  // decision_notes row and its dn_conditions so any update by another user
+  // (e.g. Manager approves, BOH decides) is reflected immediately without refresh.
+  useEffect(() => {
+    if (!id) return
+
+    const channel = supabase
+      .channel(`dn-detail-${id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'brimos',
+        table: 'decision_notes',
+        filter: `id=eq.${id}`,
+      }, () => { fetchOne(id) })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'brimos',
+        table: 'dn_conditions',
+        filter: `dn_id=eq.${id}`,
+      }, () => { fetchOne(id) })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [id, supabase, fetchOne])
 
   return {
     dn, list, loading, error,

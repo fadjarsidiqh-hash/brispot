@@ -75,7 +75,7 @@ export function SessionGuard({ children }: { children: React.ReactNode }) {
         const isKickAll  = payload?.kickAll === true && payload?.except !== sessionId
         if (isTargeted || isKickAll) {
           setKicked(true)
-          sessionStorage.removeItem('brimos_alive')
+          localStorage.removeItem('brimos_alive')
           sessionStorage.removeItem('brimos_session_id')
           supabase.auth.signOut().finally(() => {
             setTimeout(() => router.replace('/auth/login?reason=kicked'), 1800)

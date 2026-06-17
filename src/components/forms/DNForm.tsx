@@ -59,6 +59,16 @@ function validateStep(step: number, values: FormValues): StepErrors {
   return errs
 }
 
+const EMPTY_VALUES: FormValues = {
+  debtor_name: '', debtor_cif: '', debtor_nik: '', debtor_phone: '',
+  credit_type: '', credit_type_other: '', credit_amount: '',
+  credit_application_date: '', slik_status: '', pic_type: 'RM', title: '',
+}
+
+function draftKey(userId: string) {
+  return `brimos_dn_draft_${userId}`
+}
+
 export function DNForm() {
   const router      = useRouter()
   const supabase    = createClient()
@@ -70,12 +80,31 @@ export function DNForm() {
   const [errors, setErrors]       = useState<StepErrors>({})
   const [dnNumber, setDnNumber]   = useState(() => generateDNNumber('XXX'))
   const [slikFile, setSlikFile]   = useState<File | null>(null)
+  const [draftRestored, setDraftRestored] = useState(false)
 
-  const [values, setValues] = useState<FormValues>({
-    debtor_name: '', debtor_cif: '', debtor_nik: '', debtor_phone: '',
-    credit_type: '', credit_type_other: '', credit_amount: '',
-    credit_application_date: '', slik_status: '', pic_type: 'RM', title: '',
-  })
+  const [values, setValues] = useState<FormValues>({ ...EMPTY_VALUES })
+
+  // Restore draft from localStorage once profile is ready
+  useEffect(() => {
+    if (!profile?.id || draftRestored) return
+    try {
+      const raw = localStorage.getItem(draftKey(profile.id))
+      if (raw) {
+        const saved = JSON.parse(raw) as { values: FormValues; step: number }
+        setValues(saved.values)
+        setStep(saved.step)
+      }
+    } catch {}
+    setDraftRestored(true)
+  }, [profile?.id, draftRestored])
+
+  // Auto-save draft on every values/step change (after initial restore)
+  useEffect(() => {
+    if (!profile?.id || !draftRestored) return
+    try {
+      localStorage.setItem(draftKey(profile.id), JSON.stringify({ values, step }))
+    } catch {}
+  }, [values, step, profile?.id, draftRestored])
 
   useEffect(() => {
     if (profile?.branch_code) setDnNumber(generateDNNumber(profile.branch_code))
@@ -146,6 +175,10 @@ export function DNForm() {
       }
     }
 
+    // Clear the saved draft now that the DN has been created in the database
+    if (profile?.id) {
+      try { localStorage.removeItem(draftKey(profile.id)) } catch {}
+    }
     setSubmitting(false)
     router.push(`/decision-notes/${dn.id}`)
   }
