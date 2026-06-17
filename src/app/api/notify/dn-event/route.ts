@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import type { UserRole } from '@/types'
 
 /**
@@ -13,6 +14,13 @@ import type { UserRole } from '@/types'
  */
 
 const FONNTE_URL = 'https://api.fonnte.com/send'
+
+// Service-role client to insert notifications (bypasses RLS)
+const serviceClient = createServiceClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { db: { schema: 'brimos' } }
+)
 
 interface Profile { id?: string; full_name: string; phone: string | null; email: string }
 type DNRecord = {
@@ -52,6 +60,20 @@ async function sendWA(phone: string | null, message: string): Promise<void> {
     if (!res.ok) console.error('[notify/dn-event] WA send failed:', await res.text())
   } catch (e) {
     console.error('[notify/dn-event] WA exception:', e)
+  }
+}
+
+function buildSubject(event: string, dn: DNRecord): string {
+  switch (event) {
+    case 'SUBMITTED':       return `DN ${dn.dn_number} diajukan ke Manager`
+    case 'DECIDED_MANAGER': return `DN ${dn.dn_number} diputuskan Manager`
+    case 'DECIDED_BOH':     return `DN ${dn.dn_number} diputuskan BOH`
+    case 'VERIFIED_ADK':    return `DN ${dn.dn_number} diverifikasi ADK`
+    case 'COMPLETED':       return `DN ${dn.dn_number} selesai (Completed)`
+    case 'REJECTED':        return `DN ${dn.dn_number} ditolak`
+    case 'NEEDS_REVISION':  return `DN ${dn.dn_number} perlu revisi dokumen`
+    case 'RESUBMITTED':     return `DN ${dn.dn_number} diajukan ulang oleh RM`
+    default:                return `Update DN ${dn.dn_number}`
   }
 }
 
@@ -166,9 +188,31 @@ export async function POST(request: NextRequest) {
 
   const dn = dnData as unknown as DNRecord
   const message = buildMessage(event, dn, notes)
+  const subject = buildSubject(event, dn)
   const recipients = await getRecipients(event, dn, supabase)
 
   await Promise.all(recipients.map((r) => sendWA(r.phone, message)))
+
+  // --- In-app notifications (insert into brimos.notifications) ---
+  try {
+    const recipientIds = recipients.map((r) => r.id).filter(Boolean) as string[]
+    if (recipientIds.length > 0) {
+      const inAppBody = message.replace(/\*/g, '').replace(/\n+/g, ' ').substring(0, 255)
+      const rows = recipientIds.map((recipientId) => ({
+        recipient_id: recipientId,
+        dn_id: dn.id,
+        channel: 'IN_APP' as const,
+        subject,
+        body: inAppBody,
+        is_read: false,
+        sent_at: new Date().toISOString(),
+      }))
+      const { error: notifErr } = await serviceClient.from('notifications').insert(rows)
+      if (notifErr) console.error('[notify/dn-event] in-app insert error:', notifErr.message)
+    }
+  } catch (e) {
+    console.error('[notify/dn-event] in-app notification error:', e)
+  }
 
   // --- Browser Push Notifications ---
   // Use recipient id if already available (branch lookup path), else lookup by email
