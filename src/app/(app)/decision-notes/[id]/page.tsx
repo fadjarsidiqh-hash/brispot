@@ -7,9 +7,9 @@ import { StatusTimeline } from '@/components/StatusTimeline'
 import { EscalationCountdown } from '@/components/EscalationCountdown'
 import { PRIORITY_COLORS, formatCurrency, formatDate } from '@/lib/utils'
 import Link from 'next/link'
-import { ArrowLeft, UploadCloud, CheckCircle2, Lock, Globe, XCircle, Plus, Trash2, Loader2 } from 'lucide-react'
+import { ArrowLeft, UploadCloud, CheckCircle2, Lock, Globe, XCircle, Plus, Trash2, Loader2, FileText, AlertCircle } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useI18n } from '@/contexts/I18nContext'
 
 // Daftar tindak lanjut standar sesuai flowchart BRISPOT
@@ -72,6 +72,10 @@ export default function DNDetailPage() {
   const [rejectRole, setRejectRole] = useState<'manager' | 'boh' | 'adk'>('boh')
   // Track whether the user has typed notes that haven't been saved yet
   const [notesIsDirty, setNotesIsDirty] = useState(false)
+  // Inline evidence upload per condition
+  const [uploadingCondId, setUploadingCondId] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const pendingCondIdRef = useRef<string | null>(null)
 
   const act = async (fn: () => Promise<unknown>, opts?: { clearDraft?: boolean }) => {
     setActing(true)
@@ -115,6 +119,38 @@ export default function DNDetailPage() {
         .update({ status, completed_at: status === 'COMPLETED' ? new Date().toISOString() : null })
         .eq('id', condId)
     })
+
+  // Upload bukti langsung per kondisi, lalu otomatis mark COMPLETED
+  const uploadCondEvidence = async (condId: string, file: File) => {
+    const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword', 'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+    if (file.size > 10 * 1024 * 1024) { alert('Ukuran file maks 10MB'); return }
+    if (!allowed.includes(file.type)) { alert('Format tidak didukung'); return }
+
+    setUploadingCondId(condId)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('dnId', id)
+      formData.append('conditionId', condId)
+
+      const res = await fetch('/api/upload/evidence', { method: 'POST', body: formData })
+      const json = await res.json()
+      if (!res.ok || json.error) { alert(json.error ?? 'Upload gagal'); return }
+
+      // Setelah upload berhasil, otomatis tandai kondisi selesai
+      await supabase
+        .from('dn_conditions')
+        .update({ status: 'COMPLETED', completed_at: new Date().toISOString() })
+        .eq('id', condId)
+
+      await fetchOne(id)
+    } finally {
+      setUploadingCondId(null)
+    }
+  }
 
   // Sync confidentiality selector with the value already saved in DB so BOH/Manager
   // never accidentally overwrite it with the default 'UMUM' on re-open.
@@ -467,6 +503,18 @@ export default function DNDetailPage() {
                   PIC: {dn.pic_type === 'BOTH' ? 'RM & ADK - POK' : dn.pic_type === 'ADK' ? 'ADK - POK' : 'RM'}
                 </span>
               </div>
+              {/* Hidden file input shared by all condition upload buttons */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f && pendingCondIdRef.current) uploadCondEvidence(pendingCondIdRef.current, f)
+                  e.target.value = ''
+                }}
+              />
               <div className="p-3.5 space-y-2">
                 {[...dn.conditions]
                   .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
@@ -474,6 +522,10 @@ export default function DNDetailPage() {
                   const meta = COND_STATUS_META[c.status] ?? { label: c.status, cls: 'bg-gray-100 text-gray-600' }
                   const isEvidence = c.requirement_type === 'EVIDENCE'
                   const done = c.status === 'COMPLETED'
+                  const isUploadingThis = uploadingCondId === c.id
+                  // Evidence files already linked to this condition
+                  const condEvidences = (dn.evidences ?? []).filter((e: { condition_id: string | null }) => e.condition_id === c.id)
+                  const hasEvidence = condEvidences.length > 0
                   return (
                     <div key={c.id} className="flex gap-2.5 p-2.5 rounded-lg bg-[#fafbfc] border border-[#e8ecf4]">
                       <span className="w-5 h-5 bg-[#003087] text-white text-[8px] rounded-full flex items-center justify-center shrink-0 font-bold">
@@ -491,24 +543,50 @@ export default function DNDetailPage() {
                           {c.due_date && (
                             <span className="text-[8px] text-[#9ca3af]">Batas: {formatDate(c.due_date)}</span>
                           )}
+                          {/* Badge file terupload */}
+                          {isEvidence && hasEvidence && (
+                            <span className="inline-flex items-center gap-1 text-[8px] px-1.5 py-0.5 rounded-full font-medium bg-[#e8f5e9] text-[#16a34a]">
+                              <FileText className="w-2.5 h-2.5" /> {condEvidences.length} file terupload
+                            </span>
+                          )}
+                          {/* Peringatan bukti belum ada */}
+                          {isEvidence && !hasEvidence && !done && (
+                            <span className="inline-flex items-center gap-1 text-[8px] px-1.5 py-0.5 rounded-full font-medium bg-[#fff3e0] text-[#c2410c]">
+                              <AlertCircle className="w-2.5 h-2.5" /> Belum ada bukti
+                            </span>
+                          )}
                         </div>
                         {/* Aksi PIC */}
                         {canExecuteConditions && !done && (
-                          <div className="flex gap-1.5 mt-2 flex-wrap">
+                          <div className="flex gap-1.5 mt-2 flex-wrap items-center">
                             {isEvidence && (
-                              <Link
-                                href={`/decision-notes/${dn.id}/upload`}
-                                className="flex items-center gap-1 px-2 py-1 text-[8.5px] font-semibold text-white bg-[#c2410c] rounded-md hover:bg-[#9a3412] transition-colors"
+                              <button
+                                onClick={() => { pendingCondIdRef.current = c.id; fileInputRef.current?.click() }}
+                                disabled={isUploadingThis}
+                                className="flex items-center gap-1 px-2 py-1 text-[8.5px] font-semibold text-white bg-[#c2410c] rounded-md hover:bg-[#9a3412] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
                               >
-                                <UploadCloud className="w-3 h-3" /> Upload Bukti
-                              </Link>
+                                {isUploadingThis ? <Loader2 className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3" />}
+                                {isUploadingThis ? 'Mengunggah...' : 'Upload Bukti'}
+                              </button>
                             )}
-                            <button
-                              onClick={() => setCondStatus(c.id, 'COMPLETED')}
-                              className="flex items-center gap-1 px-2 py-1 text-[8.5px] font-semibold text-white bg-[#16a34a] rounded-md hover:bg-[#15803d] transition-colors"
-                            >
-                              <CheckCircle2 className="w-3 h-3" /> Tandai Selesai
-                            </button>
+                            {!isEvidence && (
+                              <button
+                                onClick={() => setCondStatus(c.id, 'COMPLETED')}
+                                disabled={acting}
+                                className="flex items-center gap-1 px-2 py-1 text-[8.5px] font-semibold text-white bg-[#16a34a] rounded-md hover:bg-[#15803d] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                              >
+                                <CheckCircle2 className="w-3 h-3" /> Tandai Selesai
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {done && isEvidence && hasEvidence && (
+                          <div className="mt-1.5 flex flex-col gap-0.5">
+                            {condEvidences.map((ev: { file_name: string; file_path: string }) => (
+                              <span key={ev.file_path} className="inline-flex items-center gap-1 text-[8px] text-[#003087]">
+                                <FileText className="w-2.5 h-2.5" /> {ev.file_name}
+                              </span>
+                            ))}
                           </div>
                         )}
                       </div>
